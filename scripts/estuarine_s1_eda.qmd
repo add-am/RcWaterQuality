@@ -31,18 +31,21 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #use pacman function to load and install (if required) all other packages
 pacman::p_load(tidyverse, glue, here, sf, tmap, janitor, readxl, ggplot2, viridis, busdater)
 
-if (interactive()) {
-params <- rmarkdown::yaml_front_matter(rstudioapi::getSourceEditorContext()$path)$params
-}
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
 
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
+#define the script crs and target year
+script_crs <- "EPSG:7855"
+script_fyear <- 2025
 
-##read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
 #turn off scientific notation
 options(scipen = 999)
