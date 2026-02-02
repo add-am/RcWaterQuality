@@ -1,0 +1,430 @@
+---
+title: "Freshwater Water Quality Exploratory Data Analysis"
+subtitle: "A Healthy Waters Partnership Analysis"
+description: "Script 2 in a series of script designed to analyse, score, and present freshwater water quality in the Dry Tropics region. The output of this is used in the Dry Tropics Technical Report."
+author: "Adam Shand"
+format: html
+params:
+  project_crs: "EPSG:7844"
+  target_fyear: 2024
+  sites_removed: TRUE
+---
+
+::: {.callout-note}
+## Note
+Params with the yaml of this script allow a choice between datasets that have "offending" sites removed, and datasets that contain all data. Choose appropriately depending on your needs!
+:::
+
+# Introduction
+
+The purpose of this script is to perform the main data analysis, as well as calculate final results for water quality data in the Dry Tropics technical report. Key steps include:
+
+ - Loading in data prepared by script 1 of the series.
+ - Re-calculating summary stats to be saved to the main output folder (note these were originally calculated in script 1 to help with EDA checks).
+ - Calculating the monthly median values for all indicators
+ - Calculating the annual median values (from the monthly median values) for all indicators
+ - Calculating the standardised scores for all indicators for all:
+    + Watercourses
+ - Summing indicators to calculate indicator categories
+ - Summing indicator categories to calculate the water quality index
+ - Calculating the standardised scores for all indicator, indicator categories, and indices, by taking the mean value for each:
+    + Sub Basin
+    + Basin
+ - Weighting all calculated scores for each sub basin based on their proportion of the basin they are within
+ - Summing the weighted sub basins scores to calculated weighted basin scores
+ - Converting all scores (weighted and unweighted) to grades.
+ - Rounding final values (floor rounding where appropriate).
+ - Saving various data tables that will be used in the technical report.
+
+# Script Set Up
+
+This script requires multiple core spatial packages, each of which is loaded below. Key variables and paths are also created.
+
+```{r}
+#| label: load packages
+
+#use pacman function to load and install (if required) all other packages
+pacman::p_load(tidyverse, glue, here, janitor, openxlsx2, reactable)
+
+#load in the custom function used to create the read and write folders for the script
+source(here("functions/script_setup.R"))
+
+#run the function to create the folders and paths
+script_setup()
+
+#read in the custom function to clean column names into our specific style
+source(here("functions/name_cleaning.R"))
+
+#turn off scientific notation
+options(scipen = 999)
+
+#determine if we want the dataset to be the one with removed sites, or the original
+removed <- params$sites_removed
+
+```
+
+# Load Data
+
+Data for this script is provided in a single spreadsheet that was prepared by script 1 in this series of scripts. Please note that script 1 may have removed some offending values, if this is the case a warning will notify as such.
+
+```{r}
+#| label: load data
+#| warning: true
+
+if (file.exists(glue("{data_path}_sites_removed.csv")) & removed == T){ #if post removed exists, and that is what you want
+  
+  #read in data
+  freshwater_wq_all <- read_csv(glue("{data_path}_sites_removed.csv"))
+  
+  #provide a notifying warning
+  warning("The data that has been loaded in has had some values removed as per the QA/QC checks 
+          performed in script 1 of this series. Please confirm this is the dataset you would like
+          to use.")
+  
+} else if (file.exists(glue("{data_path}.csv"))){ #if a dataset that never needed removal exists
+  
+  #read in data
+  freshwater_wq_all <- read_csv(glue("{data_path}.csv"))
+  
+} else { #otherwise, take the pre removal dataset
+  
+  #read in data
+  freshwater_wq_all <- read_csv(glue("{data_path}_pre_removal.csv"))
+    
+}
+
+#run name cleaning function
+freshwater_wq_all <- name_cleaning(freshwater_wq_all)
+
+#convert columns to factors and give them the custom order we use in the technical report
+freshwater_wq_all <- freshwater_wq_all |> 
+  mutate(across(c(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea), factor),
+         BasinOrZone = fct_relevel(BasinOrZone, "Ross", "Black"), 
+         SubBasinOrSubZone = fct_relevel(SubBasinOrSubZone, "Upper Ross River", "Lower Ross River", "Bohle River", "Black River", 
+                                 "Bluewater Creek", "Rollingstone Creek", "Crystal Creek"), 
+         WatercourseOrGeographicArea = fct_relevel(WatercourseOrGeographicArea, "Ross Lake", "Aplins Weir", "Gleesons Weir",
+                                   "Blacks Weir", "Bohle Mid-Field", "Bohle Far-Field", "Black River", 
+                                   "Althaus Creek", "Bluewater Creek","Sleeper Log Creek", "Leichhardt Creek",
+                                   "Saltwater Creek",  "Rollingstone Creek", "Ollera Creek", "Crystal Creek",
+                                   "Paluma Lake")) 
+
+```
+
+# Calculate Results
+
+Once all the data has been loaded in we can begin to calculate results. However the first step is to calculate some side statistics such as number of samples, and number of months sampled.
+
+```{r}
+#| label: calculate side statistics
+
+#select current fy and add the month column
+freshwater_wq_cy <- freshwater_wq_all |> filter(Fy == current_fyear) |> 
+  mutate(Month = month(Date, label = T))
+
+#calculate the number of months sampled, and the total number of samples
+freshwater_wq_cy <- freshwater_wq_cy |> 
+  group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Fy, Indicator) |> 
+  mutate(NMonths = length(unique(Month)),
+         NSamples = n()) |> 
+  ungroup()
+
+```
+
+## Monthly Medians
+
+Below we calculate monthly median values for each watercourse, this is particularly important for the CLMP samples that have multiple samples per month, less so for the others.
+
+```{r}
+#| label: calculate monthly medians
+
+#calculate monthly medians for each indicator
+fw_wq_monthly <- freshwater_wq_cy |> 
+  group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Fy, Month, NMonths, NSamples, Indicator, 
+           Units, Wqo, Sf, SubBasinArea, SubBasinProportionOfBasin) |> 
+  summarise(MonthlyMedianValues = median(Values, na.rm = T)) |> 
+  ungroup()
+
+```
+
+## Annual Medians
+
+Then we will calculate annual medians, plus twentieth and eightieth percentiles which are used in the standardised scoring function.
+
+```{r}
+#| label: Calculate annual medians
+
+#group up using the same reverse grouping trick and calculate values
+fw_wq_annual <- fw_wq_monthly |> 
+  group_by(across(c(-MonthlyMedianValues, -Month))) |> 
+  mutate(AnnualMedianValues = median(MonthlyMedianValues, na.rm = T),
+         Twentieth = quantile(MonthlyMedianValues, probs = 0.2, na.rm = TRUE),
+         Eightieth = quantile(MonthlyMedianValues, probs = 0.8, na.rm = TRUE)) |> 
+  ungroup()
+
+```
+
+### Side Tangent: Summary Stats
+
+Part of the technical report includes summary statistics. Below we stylize and present these stats. The table is showed below.
+
+```{r}
+#| label: Summary statistics
+
+#stylize table
+freshwater_summary_stats <- fw_wq_annual |> 
+  select(WatercourseOrGeographicArea, Indicator, NSamples, NMonths, AnnualMedianValues, Wqo, Sf) |> 
+  unique() |> 
+  mutate(across(c(Indicator), factor),
+         Indicator = fct_relevel(Indicator, "DIN", "TP", "FRP", "Turbidity", "High_DO", "Low_DO"),
+         AnnualMedianValues = round(AnnualMedianValues, 3)) |> 
+  arrange(Indicator, WatercourseOrGeographicArea)
+  
+#load in custom function
+source(here("functions/cond_form_wq_summary_stats.R"))
+
+#save data
+cond_form_wq_summary_stats(freshwater_summary_stats, glue("{output_path}/summary_statistics"), cols = c(5:6))
+
+#Important note: Variables for which "success" is to be greater than the water quality objective need to have their colours reversed.
+
+#create object to present in the rendered quarto document
+summary_table_present <- reactable(freshwater_summary_stats)
+
+```
+
+`r summary_table_present`
+
+## Standardised Scores: Watercourses
+
+Once annual medians are done we can calculate the standardised scores for each watercourse using a custom function.
+
+```{r}
+#| label: calculate standardised scores
+
+#create standardised score function
+standardised_score <- function(Indicator, Value, Wqo, Sf, Eightieth, Twentieth){
+
+  if (Indicator != "Low_DO"){ #if the indicator is not low DO use the standard scoring system (high = fail)
+    
+    score <- ifelse(Value > Wqo, pmax(60.9 - (60.9 * (abs((Value - Wqo)/(Sf - Wqo)))), 0),
+                    ifelse(Value <= Wqo & Eightieth > Wqo, 80.99 - (19.9 * (abs((Eightieth - Wqo)/(Eightieth - Value)))), 90))
+    
+  } else { #else for the low DO indicator use a different scoring system (low = fail)
+    
+    score <- ifelse(Value < Wqo, pmax(60.9 - (60.9 * (abs((Value - Wqo)/(Sf - Wqo)))), 0),
+                    ifelse(Value >= Wqo & Twentieth < Wqo, 80.99 - (19.9 * (abs((Wqo - Twentieth)/(Value - Twentieth)))), 90))
+    
+  }
+}
+
+#run function using a rowwise grouping (each "group" is a single row) then select required columns and rows
+fw_wq_annual <- fw_wq_annual |> 
+  rowwise() |> 
+  mutate(Score = standardised_score(Indicator, AnnualMedianValues, Wqo, Sf, Eightieth, Twentieth)) |> 
+  ungroup() |> 
+  select(Region, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Indicator, Score, SubBasinArea, SubBasinProportionOfBasin) |> 
+  distinct() |> filter(!is.na(Score))
+
+```
+
+## Indicator Categories and Indices
+
+To calculate indicator category and index scores we first need to prepared the data somewhat.
+
+```{r}
+#| label: prepare data
+
+#pivot data wider and convert columns to factors to set up for the impending calculation
+fw_wq_annual_wide <- fw_wq_annual |> 
+  pivot_wider(names_from = Indicator, values_from = Score)
+
+#clean the names up
+fw_wq_annual_wide <- name_cleaning(fw_wq_annual_wide)
+
+```
+
+Before we can then perform the require rowwise operations.
+
+```{r}
+#| label: calculate indicator category and index scores
+
+#calculate indicator categories and indices scores
+fw_wq_all <- fw_wq_annual_wide |> 
+  rowwise() |> 
+  mutate(Nutrients = mean(c(Din, Tp), na.rm = T),
+         MinDo = min(c(HighDo, LowDo), na.rm = T),
+         PhysChem = mean(c(Turbidity, MinDo), na.rm = T),
+         OverallWq = mean(c(Nutrients, PhysChem), na.rm = T),
+         across(where(is.numeric), ~ifelse(is.infinite(.), NA, .))) |>
+  ungroup()
+
+```
+
+## Standarised Scores: Sub_Basins, Basins
+
+Once all scores have been calculated at the watercourse level, they can be averaged up to each of the subsequent levels (sub basin and then basin).
+
+```{r}
+#| label: calculate scores for sub basins and basins
+
+#group at each level and get the mean of each indicator, indicator category, and index, at that level
+sub_basin_scores <- fw_wq_all |> 
+group_by(Region, BasinOrZone, SubBasinOrSubZone, SubBasinArea, SubBasinProportionOfBasin) |> 
+  summarise(across(c(Din, Frp, HighDo, LowDo, Turbidity, Tp, Nutrients, PhysChem, OverallWq), mean, na.rm = T))
+
+#as above
+basin_scores <- fw_wq_all |> 
+  group_by(Region, BasinOrZone) |> 
+  summarise(across(c(Din, Frp, HighDo, LowDo, Turbidity, Tp, Nutrients, PhysChem, OverallWq), mean, na.rm = T))
+
+#combine each of the datasets
+fw_wq_all_scores <- bind_rows(fw_wq_all, sub_basin_scores, basin_scores) 
+
+```
+
+### Side Tangent: Save Sub Basin Scores
+
+A second side tangent we will take here is to save the sub basin scores for nutrients, phys-chem, and the water quality index. These scores need to be added to the appendix.
+
+```{r}
+#| label: save sub basin scores
+
+#select specific rows
+sub_basin_scores_save <- sub_basin_scores |> ungroup() |> 
+  select(SubBasinOrSubZone, Nutrients, PhysChem, OverallWq) |> 
+  mutate(across(where(is.numeric), floor))
+
+#load in custom function
+source(here("functions/cond_form_rc_grades.R"))
+
+#save data
+cond_form_rc_grades(sub_basin_scores_save, glue("{output_path}/fw_appendix_sub_basin_scores"), cols = c(2:4), method = "numeric")
+
+```
+
+## Weighted Scores
+
+Now every single score has been calculated, all of them can be weighted appropriately.
+
+```{r}
+#| label: create weight scores
+
+#if the score has an associated sub basin weighting, calculate as such
+fw_wq_sub_basin_weighted <- fw_wq_all_scores |> 
+  mutate(across(c("Din", "Frp", "HighDo", "LowDo", "Tp", "Turbidity", "Nutrients", "PhysChem", "OverallWq"),
+                ~ .*SubBasinProportionOfBasin, .names = "{.col}Weighted"))
+
+#select all rows that don't have a watercourse, (i.e. only sub basins), then group by basin and sum to get a weighted basin score.
+fw_wq_basin_weighted <- fw_wq_sub_basin_weighted |> 
+  filter(is.na(WatercourseOrGeographicArea)) |> 
+  group_by(BasinOrZone) |> 
+  mutate(across(c("SubBasinArea","DinWeighted", "FrpWeighted", "HighDoWeighted", "LowDoWeighted", 
+                  "TpWeighted", "TurbidityWeighted", "NutrientsWeighted", "PhysChemWeighted", "OverallWqWeighted"),  
+                ~ if_else(is.na(SubBasinOrSubZone), sum(., na.rm = TRUE), .))) |> ungroup()
+
+#combined each dataset together, remove duplicated rows, and remove the unweighted basin rows
+fw_wq_all_weighted <- rbind(fw_wq_sub_basin_weighted, fw_wq_basin_weighted) |> 
+  unique() |> 
+  filter(!is.na(BasinOrZone) & !is.na(OverallWqWeighted))
+
+```
+
+## Scores to Grades
+
+Finally, both the weighted and unweighted scores can be converted to a grade.
+
+```{r}
+#| label: convert score to grade
+
+#create score to grade function
+score_to_grade <- function(Score) {
+  
+  Grade <- ifelse(Score >= 81, "A",
+                  ifelse(Score >= 61, "B",
+                         ifelse(Score >= 41, "C",
+                                ifelse(Score >= 21, "D", "E"))))
+}
+
+#apply score to grade function to each column
+fw_wq_all_scores_grades_raw <- fw_wq_all_weighted |> 
+  mutate(across(9:length(fw_wq_all_weighted), 
+                .names = "{.col}_Grade", ~ score_to_grade(.)))
+
+```
+
+## Floor Rounding
+
+A quirk of the water quality calculations is that all final scores are presented as whole numbers, and any values with decimals are rounded down (floor rounding).
+
+```{r}
+#| label: floor round results
+
+#floor all numeric columns except those that contain the word "Prop" or as these are proportions (need decimals)
+fw_wq_all_scores_grades_floor <- fw_wq_all_scores_grades_raw |> 
+  mutate(across(where(is.numeric) & !contains(c("Prop", "Weight")), floor),
+         across(where(is.numeric) & contains("Weight"), round, 1),
+         across(contains("Prop"), round, 2))
+
+```
+
+# Saving Results
+
+A series of tables need to be created to save the results in a digestible format. These tables include:
+
+ - The entire raw data set
+ - The entire dataset with rounding applied (floor rounding where appropriate).
+ - Nutrients table (main report; DIN, TP, Nutrients (unweighted), Area (% and km2), Nutrients (sub basin weighted), Nutrients (basin weighted))
+ - Phys Chem table (main report; High DO, Low DO, Turbidity, Phys Chem (unweighted), Area (% and km2), Phys Chem (sub basin weighted), Phys Chem (basin weighted))
+ - A summary table (which has already been saved further up).
+
+```{r}
+#| label: save data as tables
+
+#save entire raw dataset
+write_csv(fw_wq_all_scores_grades_raw, glue("{output_path}/fw_wq_all_scores_grades_raw.csv"))
+
+#save entire rounded dataset
+write_csv(fw_wq_all_scores_grades_floor, glue("{output_path}/fw_wq_all_scores_grades_floor.csv"))
+
+#do some yuck rearranging of data to make results align with the desired output tables.
+nut_phys_chem_prep <- fw_wq_all_scores_grades_floor |> 
+  rename("Weighting(%)" = SubBasinProportionOfBasin, 
+         "Area(km2)" = SubBasinArea) |> 
+  mutate(SubBasinNutrientsWeighted = case_when(!is.na(WatercourseOrGeographicArea) ~ NA,
+                                                  is.na(SubBasinOrSubZone) ~ NA,
+                                                  T ~ NutrientsWeighted),
+         SubBasinPhysChemWeighted = case_when(!is.na(WatercourseOrGeographicArea) ~ NA, 
+                                                  is.na(SubBasinOrSubZone) ~ NA,
+                                                  T ~ PhysChemWeighted),
+         NutrientsWeighted = case_when(!is.na(SubBasinOrSubZone) ~ NA, 
+                                        T ~ NutrientsWeighted),
+         PhysChemWeighted = case_when(!is.na(SubBasinOrSubZone) ~ NA, 
+                                        T ~ PhysChemWeighted),
+         "Area(km2)" = case_when(!is.na(WatercourseOrGeographicArea) ~ NA, 
+                                  T ~ `Area(km2)`),
+         "Weighting(%)" = case_when(is.na(`Weighting(%)`) ~ 1, 
+                                     !is.na(WatercourseOrGeographicArea) ~ NA, 
+                                     T ~ `Weighting(%)`))
+
+#select columns for the nutrients table
+nutrients_table <- nut_phys_chem_prep |> 
+  select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Din, Tp, Nutrients, "Weighting(%)", "Area(km2)", 
+         SubBasinNutrientsWeighted, NutrientsWeighted) |> 
+  arrange(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea)
+
+#load in custom function
+source(here("functions/cond_form_rc_grades.R"))
+
+#save data
+cond_form_rc_grades(nutrients_table, glue("{output_path}/fw_nutrients"), cols = c(4:10), method = "Numeric")
+
+#select columns for the phys_chem table
+phys_chem_table <- nut_phys_chem_prep |> 
+  select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, HighDo, LowDo, Turbidity, PhysChem, "Weighting(%)", "Area(km2)", 
+         SubBasinPhysChemWeighted, PhysChemWeighted) |> 
+  arrange(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea)
+
+#save data
+cond_form_rc_grades(phys_chem_table, glue("{output_path}/fw_phys_chem"), cols = c(4:11), method = "Numeric")
+
+```

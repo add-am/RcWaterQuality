@@ -1,0 +1,135 @@
+---
+title: "Pesticides Mapping"
+subtitle: "A Healthy Waters Partnership Analysis"
+description: "This script creates a map of all pesticide sampling locations in the Dry Tropics region. The output of this is used in the Dry Tropics Technical Report."
+author: "Adam Shand"
+format: html
+params:
+  project_crs: "EPSG:7844"
+  target_fyear: 2024 
+---
+
+# Introduction
+
+The purpose of this script is to create maps identifying the sampling site locations for the freshwater pesticides index. These maps are used in the body of the methods document, and in the appendix of the technical report.
+
+# Script Set Up
+
+This script requires multiple core spatial packages, each of which is loaded below. Key variables and paths are also created.
+
+```{r}
+#| label: load packages
+
+#use pacman function to load and install (if required) all other packages
+pacman::p_load(tidyverse, glue, here, janitor, sf, tmap, readxl, grid)
+
+#load in the custom function used to create the read and write folders for the script
+source(here("functions/script_setup.R"))
+
+#run the function to create the folders and paths
+script_setup()
+
+##read in the custom function to clean column names into our specific style
+source(here("functions/name_cleaning.R"))
+
+#set project variables
+proj_crs <- params$project_crs
+
+```
+
+# Load Data
+
+Now the script is set up we need to load in all of the required datasets. Spatial data for the northern three regions should be readily available in the repo, the dataset is created by the n3_region-builder.qmd script in the repo that should be the first script run for new users. If the dataset is not available refer back to the README document in the GitHub repo. The other parts of spatial data here are based on script 1 in this series.
+
+```{r}
+#| label: load in all data
+
+#reduce the n3_region file down to only the components we need
+dt_region <- n3_region |> 
+  name_cleaning() |> 
+  filter(Region == "Dry Tropics",
+         Environment != "Marine") |> 
+  group_by(Region, BasinOrZone, SubBasinOrSubZone) |> 
+  summarise(geom = st_union(geom)) |> 
+  ungroup() |> st_cast() |> st_make_valid()
+
+#reduce the n3_watercourse file down to only the components we need
+dt_watercourses <- n3_watercourse |> 
+  name_cleaning() |>
+  filter(Region == "Dry Tropics",
+         !StreamOrder %in% c(0,1))
+
+#read in the metadata and extra site coordinate information
+sites <- read_excel(glue("{data_path}/dt_wq_freshwater_pesticides_metadata.xlsx"),
+                            sheet = "Current_Sites", na = c("", "NA", "NULL", "null")) |> 
+  select(BasinOrZone, SubBasinOrSubZone, Watercourse, Code, Lat, Long) |> 
+  st_as_sf(coords = c("Long", "Lat"), crs = proj_crs) |> 
+  name_cleaning()
+
+```
+
+# Create Map
+
+Now we can put everything together. We will loop over the Ross and Black to make individual maps.
+
+```{r}
+#| label: create region maps
+
+#load in custom function to create the water related layers of the map
+source(here("functions/maps_water_layer.R"))
+
+#load in custom function to create the inset map
+source(here("functions/maps_inset_layer.R"))
+
+#create a background of the burdekin region for the inset map
+dt_background <- dt_region |> 
+  group_by(Region) |> 
+  summarise(geom = st_union(geom))
+
+#create a point of interest for townsville
+tsv <- poi |> filter(PlaceName == "Townsville")
+
+#create target vector to loop lover
+target_vect <- unique(dt_region$BasinOrZone)
+
+for (i in target_vect){
+  
+  #filter sites and rename column
+  filtered_sites <- sites |> 
+    filter(BasinOrZone == i) |> 
+    rename("Sub Basin: Reported" = SubBasinOrSubZone)
+  
+  #define focus area and rename column
+  focus_area <- dt_region |> 
+    filter(BasinOrZone == i) |> 
+    rename("Sub Basin: All" = SubBasinOrSubZone)
+
+  #create the base water layer for the specific basin
+  maps_water_layer(stream_order = c(2,9), water_lines = T, water_polygons = T, 
+                   basin_or_zone = i, enviro = c("Freshwater", "Estuarine"), fast = T)
+  
+  #create the background layer using the broader dry tropics backdrop
+  maps_inset_layer(supplied_sf_1 = focus_area, background = dt_background, aspect = 0.9)
+
+  #create the main map
+  map <- tm_shape(qld) +
+    tm_polygons(col = "grey80", border.col = "black") +
+    tm_shape(dt_region) +
+    tm_polygons(col = "grey90", border.col = "black") +
+    tm_shape(focus_area, is.master = T) +
+    tm_polygons(col = "Sub Basin: All", border.col = "black", alpha = 0.5, palette = "Pastel1") +
+    water_map +
+    tm_shape(tsv) +
+    tm_symbols(size = 0.3, col = "white", border.col = "black", border.lwd = 1, shape = 23) +
+    tm_text("PlaceName", shadow = T, auto.placement = T, size = 0.6) +
+    tm_shape(filtered_sites) +
+    tm_symbols(size = 0.6, col = "Sub Basin: Reported", border.col = "black", border.lwd = 2, shape = 21, palette = "Set1") +
+    tm_text("Code", shadow = T, auto.placement = T, size = 0.9) +
+    tm_layout(legend.bg.color = "white", legend.frame = "black", asp = 1.1)
+
+  #save map
+  tmap_save(map, glue("{output_path}/{i}_Pesticides.png"), insets_tm = inset_map, insets_vp = inset_viewport)
+  
+}
+
+```

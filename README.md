@@ -1,2 +1,2 @@
-# RcWaterQuality
-This repo will contain all analysis related to water quality for the Report Card(s)
+# RcWetlands
+This repo contains all code related to calculating wetland scores for the Northern Three Report Cards
