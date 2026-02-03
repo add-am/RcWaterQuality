@@ -1,0 +1,23 @@
+Region,BasinOrZone,SubBasinOrSubZone,WatercourseOrGeographicArea,SubBasinArea,SubBasinProportionOfBasin,Din,HighDo,LowDo,Tp,Turbidity,Frp,Nutrients,MinDo,PhysChem,OverallWq,DinWeighted,FrpWeighted,HighDoWeighted,LowDoWeighted,TpWeighted,TurbidityWeighted,NutrientsWeighted,PhysChemWeighted,OverallWqWeighted,DinGrade,HighDoGrade,LowDoGrade,TpGrade,TurbidityGrade,FrpGrade,NutrientsGrade,MinDoGrade,PhysChemGrade,OverallWqGrade,DinWeightedGrade,FrpWeightedGrade,HighDoWeightedGrade,LowDoWeightedGrade,TpWeightedGrade,TurbidityWeightedGrade,NutrientsWeightedGrade,PhysChemWeightedGrade,OverallWqWeightedGrade
+DT,Ross,Bohle River,Bohle River,25,0.18,90,90,66,61,62,NA,75,66,64,70,16.4,NA,16.4,12.2,11.2,11.4,13.8,11.8,12.8,A,A,B,B,B,E,B,B,B,B,E,E,E,E,E,E,E,E,E
+DT,Ross,Bohle River,Louisa Creek,25,0.18,0,90,0,0,67,NA,0,0,33,16,0,NA,16.4,0,0,12.3,0,6.1,3.1,E,A,E,E,B,E,E,E,D,E,E,E,E,E,E,E,E,E,E
+DT,Ross,Lower Ross River,Ross Creek,11,0.08,90,90,61,90,90,90,90,61,75,82,7.2,7.2,7.2,4.9,7.2,7.2,7.2,6,6.6,A,A,B,A,A,A,A,B,B,A,E,E,E,E,E,E,E,E,E
+DT,Ross,Lower Ross River,Ross River,11,0.08,90,90,33,90,90,90,90,33,61,75,7.2,7.2,7.2,2.7,7.2,7.2,7.2,4.9,6,A,A,D,A,A,A,A,D,B,B,E,E,E,E,E,E,E,E,E
+DT,Ross,Stuart Creek,Sandfly Creek,15,0.12,90,90,68,70,42,NA,80,68,55,67,10.4,NA,10.4,7.9,8.1,4.9,9.2,6.4,7.8,A,A,B,B,C,E,B,B,C,B,E,E,E,E,E,E,E,E,E
+DT,Ross,Alligator Creek,Alligator Creek,86,0.62,90,90,65,74,58,NA,82,65,61,72,56,NA,56,40.6,46.3,36.4,51.2,38.5,44.8,A,A,B,B,C,E,A,B,B,B,C,E,C,D,C,D,C,D,C
+DT,Black,Bluewater Creek,Althaus Creek,4,0.47,62,90,90,74,18,90,68,90,54,61,29,41.9,41.9,41.9,34.6,8.6,31.8,25.2,28.5,B,A,A,B,E,A,B,A,C,B,D,C,C,C,D,E,D,D,D
+DT,Black,Bluewater Creek,Bluewater Creek,4,0.47,50,90,70,72,28,90,61,70,49,55,23.7,41.9,41.9,33,33.8,13.2,28.7,23.1,25.9,C,A,B,B,D,A,B,B,C,C,D,C,C,D,D,E,D,D,D
+DT,Black,Bluewater Creek,Sleeper Log Creek,4,0.47,62,90,90,77,35,90,69,90,62,66,28.9,41.9,41.9,41.9,36.1,16.4,32.5,29.2,30.8,B,A,A,B,D,A,B,A,B,B,D,C,C,C,D,E,D,D,D
+DT,Black,Rollingstone Creek,Camp Oven Creek,2,0.27,62,90,2,90,90,90,76,2,46,61,17,24.4,24.4,0.7,24.4,24.4,20.7,12.5,16.6,B,A,E,A,A,A,B,E,C,B,E,D,D,E,D,D,E,E,E
+DT,Black,Rollingstone Creek,Saltwater Creek,2,0.27,52,90,90,90,75,90,71,90,82,77,14.3,24.4,24.4,24.4,24.4,20.5,19.4,22.5,20.9,C,A,A,A,B,A,B,A,A,B,E,D,D,D,D,E,E,D,E
+DT,Black,Rollingstone Creek,Rollingstone Creek,2,0.27,27,76,90,90,62,90,58,76,69,64,7.6,24.4,20.7,24.4,24.4,16.8,16,18.8,17.4,D,B,A,A,B,A,C,B,B,B,E,D,E,D,D,E,E,E,E
+DT,Black,Crystal Creek,Crystal Creek,2,0.26,36,90,90,71,32,90,53,90,61,57,9.6,23.7,23.7,23.7,18.7,8.7,14.2,16.2,15.2,D,A,A,B,D,A,C,A,B,C,E,D,D,D,E,E,E,E,E
+DT,Ross,Bohle River,NA,25,0.18,45,90,33,30,64,NA,37,NA,49,43,8.2,NA,16.4,6.1,5.6,11.8,6.9,9,7.9,C,A,D,D,B,E,D,E,C,C,E,E,E,E,E,E,E,E,E
+DT,Ross,Lower Ross River,NA,11,0.08,90,90,47,90,90,NA,90,NA,68,79,7.2,NA,7.2,3.8,7.2,7.2,7.2,5.5,6.3,A,A,C,A,A,E,A,E,B,B,E,E,E,E,E,E,E,E,E
+DT,Ross,Stuart Creek,NA,15,0.12,90,90,68,70,42,NA,80,NA,55,67,10.4,NA,10.4,7.9,8.1,4.9,9.2,6.4,7.8,A,A,B,B,C,E,B,E,C,B,E,E,E,E,E,E,E,E,E
+DT,Ross,Alligator Creek,NA,86,0.62,90,90,65,74,58,NA,82,NA,61,72,56,NA,56,40.6,46.3,36.4,51.2,38.5,44.8,A,A,B,B,C,E,A,E,B,B,C,E,C,D,C,D,C,D,C
+DT,Black,Bluewater Creek,NA,4,0.47,58,90,83,74,27,NA,66,NA,55,61,27.2,NA,41.9,38.9,34.8,12.8,31,25.8,28.4,C,A,A,B,D,E,B,E,C,B,D,E,C,D,D,E,D,D,D
+DT,Black,Rollingstone Creek,NA,2,0.27,47,85,60,90,75,NA,68,NA,66,67,13,NA,23.2,16.5,24.4,20.6,18.7,17.9,18.3,C,A,C,A,B,E,B,E,B,B,E,E,D,E,D,E,E,E,E
+DT,Black,Crystal Creek,NA,2,0.26,36,90,90,71,32,NA,53,NA,61,57,9.6,NA,23.7,23.7,18.7,8.7,14.2,16.2,15.2,D,A,A,B,D,E,C,E,B,C,E,E,D,D,E,E,E,E,E
+DT,Ross,NA,NA,138,NA,75,90,49,64,68,NA,69,NA,58,64,81.8,0,90,58.4,67.1,60.3,74.4,59.3,66.9,B,A,C,B,B,E,B,E,C,B,A,E,A,C,B,C,B,C,B
+DT,Black,NA,NA,10,NA,50,88,74,80,48,NA,65,NA,60,63,49.8,0,88.8,79.1,78,42,63.9,60,61.9,C,A,B,B,C,E,B,E,C,B,C,E,A,B,B,C,B,C,B

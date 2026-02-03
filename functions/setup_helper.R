@@ -44,15 +44,18 @@ setup_helper <- function(Year){
   #join sections that will point to the data folder using the shortened version of the script name
   data_path <- here::here(glue::glue("data/{striped_short_path}/"))
 
-  #if it is the 1st or 4th water quality script that is calling the function 
+  #if it is the 1st or 4th water quality script that is calling this function 
   if (stringr::str_detect(short_path, "s1|s4")){
     
     #include "raw" to the data path
     data_path <- glue::glue("{data_path}/raw/")
 
-    #create folders for the plots and spreadsheets to be stored separately (since there are so many)
-    dir.create(glue::glue("{output_path}/plots/"), recursive = TRUE, showWarnings = FALSE)
-    dir.create(glue::glue("{output_path}/spreadsheets/"), recursive = TRUE, showWarnings = FALSE)
+    if (stringr::str_detect(short_path, "s1")){
+
+      #create folders for the plots and spreadsheets to be stored separately (since there are so many)
+      dir.create(glue::glue("{output_path}/plots/"), recursive = TRUE, showWarnings = FALSE)
+      dir.create(glue::glue("{output_path}/spreadsheets/"), recursive = TRUE, showWarnings = FALSE)
+    }
         
   #otherwise if it is the 2nd, 3rd or 5th water quality script
   } else if (stringr::str_detect(short_path, "s2|s3|s5")){
@@ -63,9 +66,12 @@ setup_helper <- function(Year){
     #direct the path to a specific file in the "processed" folder
     data_path <- glue::glue("{data_path}/processed/{Year-1}-{Year}_{water_type}_wq_all")
 
+    #create folder
+    dir.create(output_path, recursive = TRUE)
+
     #create folders for the plots and maps to be stored separately (since there are so many)
-    dir.create(glue::glue("{output_path}/plots/"), recursive = TRUE)
-    dir.create(glue::glue("{output_path}/maps/"), recursive = TRUE)
+    #dir.create(glue::glue("{output_path}/plots/"), recursive = TRUE)
+    #dir.create(glue::glue("{output_path}/maps/"), recursive = TRUE)
       
   }
 
