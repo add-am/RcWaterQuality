@@ -132,6 +132,12 @@ site_metadata <- site_metadata |>
          Failure = case_when(Indicator == "Secchi" ~ "low", T ~ "high"), 
          Stat = case_when(Indicator %in% c("Turbidity", "TP", "NOX") ~ "median", T ~ "mean"))
 
+#read in the historical sites and just keep the site codes, this is all that is needed to  filter the data later
+historical_metadata <- read_excel(
+  glue("{data_path}/dt_wq_inshore_metadata.xlsx"),
+  sheet = "Historic_Sites", na = c("", "NA", "NULL", "null")) |> 
+    pull(Code)
+
 #clean up
 rm(target_sheets, temp_sheet)
 
@@ -226,6 +232,17 @@ rm(list = sheets[2:length(sheets)], sheets)
 
 ```
 
+### Drop Historical Sites
+
+Below a simple vector is used to filter out any sites that were listed as historic (i.e. no longer used).
+
+```{r}
+
+#only keep sites that don't exist in the historical sites list
+inshore_wq_all <- filter(inshore_wq_all, !Code %in% historical_metadata)
+
+```
+
 # QA/QC Checks
 
 We can now take this opportunity to perform the required QA/QC Checks, at the moment this includes:
@@ -284,7 +301,7 @@ location_check <- inshore_wq_all |>
   summarize(.groups = "drop")
 
 #get the number of locations that are expected
-num_locs <- ifelse(script_fyear <= 2020, 7, 8)
+num_locs <- ifelse(script_fyear <= 2020, 7, 7)
 
 #then check if we have the right number of locations
 if (nrow(location_check) == num_locs & !any(is.na(location_check))){
@@ -298,7 +315,7 @@ if (nrow(location_check) == num_locs & !any(is.na(location_check))){
   #save csv
   write_csv(location_check, glue("{output_path}/spreadsheets/location_check.csv"))
 
-stop("Test fail, currently the DT report should have 8 unique geographic areas, please cross check if 
+stop("Test fail, currently the DT report should have 7 unique geographic areas, please cross check if 
      there are locations missing, or if there have been new locations added. Review the 
      'location_check' table for more information.")
 }
@@ -310,7 +327,7 @@ code_check <- inshore_wq_all |>
   summarize(.groups = "drop")
 
 #get the number of codes that are expected
-num_codes <- ifelse(script_fyear <= 2020, 18, 20)
+num_codes <- ifelse(script_fyear <= 2020, 18, 18)
 
 #then check if we have the right number of geographic areass and codes
 if (nrow(code_check) == num_codes & !any(is.na(code_check))){
@@ -324,7 +341,7 @@ if (nrow(code_check) == num_codes & !any(is.na(code_check))){
   #save csv
   write_csv(code_check, glue("{output_path}/spreadsheets/code_check.csv"))
 
-stop("Test fail, currently the DT report should have 20 unique codes(sites), please cross check if 
+stop("Test fail, currently the DT report should have 18 unique codes(sites), please cross check if 
      there are codes missing, or if there have been new codes added. Review the 'code_check' table
      for more information.")
 }

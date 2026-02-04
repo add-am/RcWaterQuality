@@ -5,9 +5,22 @@ description: "This script is designed to conduct a preliminary analysis of the J
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2025
+  script_crs: "EPSG:7844"
+  script_fyear: 2025
 ---
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+
+```
 
 # Introduction
 
@@ -31,20 +44,21 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #use pacman function to load and install (if required) all other packages
 pacman::p_load(tidyverse, glue, here, sf, tmap, janitor, readxl, ggplot2, busdater, viridis)
 
-if (interactive()) {
-params <- rmarkdown::yaml_front_matter(rstudioapi::getSourceEditorContext()$path)$params
-}
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
 
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
-##read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
-
-current_fyear <- 2025
+#turn off scientific notation
+options(scipen = 999)
+sf_use_s2(FALSE)
 
 ```
 
@@ -161,7 +175,7 @@ for (i in 2:length(sheets)){
                   Date = Date + seconds(1), #add one second to avoid date-time error
                   Date = ymd_hms(Date), Fy = get_fy(Date), .after = Date) |> 
            filter(Fy > 2012,
-                  Fy <= current_fyear) |> #to allow for specific reporting year targeting
+                  Fy <= script_fyear) |> #to allow for specific reporting year targeting
            select(!Time)) 
 
 }
@@ -213,7 +227,7 @@ Below a simple vector is used to filter out any sites that were listed as histor
 ```{r}
 
 #only keep sites that don't exist in the historical sites list
-wq_all <- filter(!wq_all, Code %in% historical_metadata)
+wq_all <- filter(wq_all, !Code %in% historical_metadata)
 
 ```
 
@@ -251,7 +265,7 @@ if (length(unique(unit_check$Indicator)) == n_distinct(unit_check)){
 } else {
   
   #save csv
-  write_csv(unit_check, glue("{output_path}/spreadsheets/unit_check.csv"))
+  write_csv(unit_check, glue("{output_path}/spreadsheets/jz_unit_check.csv"))
 
 stop("Test fail, an indicator has data with two different units. Raw data might be provided with two 
      different units, or the units listed in the metadata may not match the master data. Review the
@@ -270,7 +284,7 @@ We will check the number of locations found in the dataset matches what we expec
 
 #group by the different levels of location
 location_check <- wq_all |>
-  filter(Fy == current_fyear) |> #make sure we are only checking the current year of data
+  filter(Fy == script_fyear) |> #make sure we are only checking the current year of data
   group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea) |> 
   summarize(.groups = "drop")
 
@@ -284,21 +298,21 @@ if (nrow(location_check) == 1 & !any(is.na(location_check))){
 } else {
   
   #save csv
-  write_csv(location_check, glue("{output_path}/spreadsheets/location_check.csv"))
+  write_csv(location_check, glue("{output_path}/spreadsheets/jz_location_check.csv"))
 
-stop("Test fail, currently the DT report should have 2 unique watercourses, please cross check if 
+stop("Test fail, currently the DT report should have 1 unique watercourses, please cross check if 
      there are locations missing, or if there have been new locations added. Review the 
      'location_check' table for more information.")
 }
 
 #group by watercourse and code
 code_check <- wq_all |> 
-  filter(Fy == current_fyear) |> #make sure we are only checking the current year of data
+  filter(Fy == script_fyear) |> #make sure we are only checking the current year of data
   group_by(WatercourseOrGeographicArea, Code) |> 
   summarize(.groups = "drop")
 
 #then check if we have the right number of watercourses and codes
-if (nrow(code_check) == 3 & !any(is.na(code_check))){
+if (nrow(code_check) == 2 & !any(is.na(code_check))){
   
   print("Test passed. Correct number of sites.")
   
@@ -307,7 +321,7 @@ if (nrow(code_check) == 3 & !any(is.na(code_check))){
 } else {
   
   #save csv
-  write_csv(code_check, glue("{output_path}/spreadsheets/code_check.csv"))
+  write_csv(code_check, glue("{output_path}/spreadsheets/jz_code_check.csv"))
 
 stop("Test fail, currently the DT report should have 2 unique codes(sites), please cross check if 
      there are codes missing, or if there have been new codes added. Review the 'code_check' table
@@ -326,7 +340,7 @@ We will now compare the LOR values against the concentration values recorded in 
 
 #check how many values are half of the LOR compared to the total number of values for the reporting period
 value_lor_check <- wq_all |> 
-  filter(Fy == current_fyear) |> 
+  filter(Fy == script_fyear) |> 
   mutate(`ValueHalved?` = case_when(Values <= Lor ~ "ValueHalved", 
                                      T ~ "ValueUnchanged")) |> 
   group_by(Code, Indicator, `ValueHalved?`) |> 
@@ -343,7 +357,7 @@ if (!any(value_lor_check$ValueHalved > value_lor_check$ValueUnchanged)){
 } else {
   
   #save the value lor check table
-  write_csv(value_lor_check, glue("{output_path}/spreadsheets/value_lor_check.csv"))
+  write_csv(value_lor_check, glue("{output_path}/spreadsheets/jz_value_lor_check.csv"))
 
 warning("At >= one site, there are more values that have been changed to half the LOR than have 
 been left unchanged. This is not inherently wrong, but should be double checked. Check the 
@@ -375,7 +389,7 @@ For any site that is flagged, the offending indicator will be removed.
 
 #check if the LOR is equal to or greater than the WQO, whilst also checking if any values are also in this range
 wqo_lor_check_p1 <- wq_all |> 
-  filter(Fy == current_fyear, Indicator != Lor) |> #this gets current year and ignore FRP
+  filter(Fy == script_fyear, Indicator != Lor) |> #this gets current year and ignore FRP
   mutate(Comparison = case_when(Lor >= Wqo & Values > Lor ~ "Val_Warn",
                                 Lor >= Wqo & Values <= Lor ~ "Val_Fail",
                                 T ~ "Val_Pass")) |>
@@ -401,14 +415,14 @@ if (any("Val_Fail" %in% colnames(wqo_lor_check_p1))){
     ungroup()
   
   #save the lor WQO check table
-  write_csv(wqo_lor_check_p2, glue("{output_path}/spreadsheets/wqo_lor_check.csv"))
+  write_csv(wqo_lor_check_p2, glue("{output_path}/spreadsheets/jz_wqo_lor_check.csv"))
   
   #check if any sites need to be removed
   
   if (!any(str_detect(wqo_lor_check_p2$Keep_Site, "Rem"))){
     
     #if no sites need to be removed save the data
-    write_csv(wq_all, glue("{output_path}/spreadsheets/freshwater_wq_all.csv"))
+    write_csv(wq_all, glue("{output_path}/spreadsheets/jz_freshwater_wq_all.csv"))
   
     print("Test passed. No sites need to be removed.")
     
@@ -420,17 +434,17 @@ if (any("Val_Fail" %in% colnames(wqo_lor_check_p1))){
       select(Code, Indicator)
   
     #use the full dataset to add all information about the code-indicator pair of any failed sites
-    removal_table <- semi_join(filter(wq_all, Fy == current_fyear), removal_table, by = join_by(Code, Indicator))
+    removal_table <- semi_join(filter(wq_all, Fy == script_fyear), removal_table, by = join_by(Code, Indicator))
   
     #subtract from the main table, any rows that appear in the removal table
     freshwater_wq_removed <- suppressMessages(anti_join(wq_all, removal_table))
       
     #save the before and after site removal tables
-    write_csv(wq_all, glue("{output_path}/spreadsheets/freshwater_wq_all_pre_site_removal.csv"))
-    write_csv(freshwater_wq_removed, glue("{output_path}/spreadsheets/freshwater_wq_all_post_site_removal.csv"))
+    write_csv(wq_all, glue("{output_path}/spreadsheets/jz_freshwater_wq_all_pre_site_removal.csv"))
+    write_csv(freshwater_wq_removed, glue("{output_path}/jz_spreadsheets/freshwater_wq_all_post_site_removal.csv"))
     
     #save the table that lists what was actually removed
-    write_csv(removal_table, glue("{output_path}/spreadsheets/freshwater_wq_all_sites_removed.csv"))
+    write_csv(removal_table, glue("{output_path}/spreadsheets/jz_freshwater_wq_all_sites_removed.csv"))
     
     warning("At >= one site, the LOR is >= WQO AND >= 50% of the values are <= LOR. This means at 
     least one site has failed. The offending sites and indicators have been removed, however the 
@@ -441,7 +455,7 @@ if (any("Val_Fail" %in% colnames(wqo_lor_check_p1))){
 } else {#if there are no fail values
   
   #save the dataset
-  write_csv(wq_all, glue("{output_path}/spreadsheets/freshwater_wq_all.csv"))
+  write_csv(wq_all, glue("{output_path}/spreadsheets/jz_freshwater_wq_all.csv"))
   
   print("Test passed. No sites need to be removed.")
 
@@ -470,7 +484,7 @@ After some mostly automated QA/QC we will now conduct some exploratory data anal
 ```{r}
 #| label: select this years data
 
-freshwater_wq_cy <- wq_all |> filter(Fy == current_fyear)
+freshwater_wq_cy <- wq_all |> filter(Fy == script_fyear)
 
 ```
 
@@ -505,7 +519,7 @@ for (i in unique(freshwater_wq_cy$Indicator)){#for each indicator
     facet_wrap(~Code, scales = "free")
   
   #save to file
-  ggsave(glue("{output_path}/plots/{i}_histogram.png"))
+  ggsave(glue("{output_path}/plots/jz_{i}_histogram.png"))
   
 }
 
@@ -551,7 +565,7 @@ for (i in unique(freshwater_wq_cy$Indicator)){#for each indicator
     facet_wrap(~Code, scales = "free")
   
   #save to file
-  ggsave(glue("{output_path}/plots/{i}_boxplot.png"))
+  ggsave(glue("{output_path}/plots/jz_{i}_boxplot.png"))
   
 }
 
@@ -590,7 +604,7 @@ for (i in unique(freshwater_wq_cy$Indicator)){#for each indicator
     facet_wrap(~Code, scales = "free")
   
   #save to file
-  ggsave(glue("{output_path}/plots/{i}_lineplot.png"))
+  ggsave(glue("{output_path}/plots/jz_{i}_lineplot.png"))
   
 }
 
@@ -668,16 +682,16 @@ if (exists("freshwater_wq_removed")) {# a removed and non-removed set exists, sa
   
   #save the data with the removed sites
   write_csv(wq_all, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_freshwater_wq_all_sites_removed.csv"))
+            glue("{data_path}/jz_{script_fyear-1}-{script_fyear}_freshwater_wq_all_sites_removed.csv"))
   
   #save the original without the removed sites - this is useful for inspecting at a later date
   write_csv(freshwater_wq_pre_removal, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_freshwater_wq_all_pre_removal.csv"))
+            glue("{data_path}/jz_{script_fyear-1}-{script_fyear}_freshwater_wq_all_pre_removal.csv"))
 
 } else {#otherwise just save the one
   
   write_csv(wq_all, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_freshwater_wq_all.csv"))
+            glue("{data_path}/jz_{script_fyear-1}-{script_fyear}_freshwater_wq_all.csv"))
 
 }
 

@@ -5,8 +5,8 @@ description: "Script 2 in a series of script designed to analyse, score, and pre
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2025
+  script_crs: "EPSG:7844"
+  script_fyear: 2025
   sites_removed: FALSE
 ---
 
@@ -14,6 +14,20 @@ params:
 ## Note
 Params with the yaml of this script allow a choice between datasets that have "offending" sites removed, and datasets that contain all data. Choose appropriately depending on your needs!
 :::
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+sites_removed <- params$sites_removed
+
+```
 
 # Introduction
 
@@ -46,27 +60,23 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #use pacman function to load and install (if required) all other packages
 pacman::p_load(tidyverse, glue, here, janitor, openxlsx2, reactable, pak)
 
+#install/load the custom RcTools package
 #pak::pak("add-am/RcTools")
 library(RcTools)
 
-if (interactive()) {
-params <- rmarkdown::yaml_front_matter(rstudioapi::getSourceEditorContext()$path)$params
-}
-
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
-
-#read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
 #turn off scientific notation
 options(scipen = 999)
 
-#determine if we want the dataset to be the one with removed sites, or the original
-removed <- params$sites_removed
+#temporarily change data path
+data_path <- "C:/Users/adams/GitHub/RcWaterQuality/data/freshwater/processed/jz_2024-2025_freshwater_wq_all"
 
 ```
 
@@ -78,7 +88,7 @@ Data for this script is provided in a single spreadsheet that was prepared by sc
 #| label: load data
 #| warning: true
 
-if (file.exists(glue("{data_path}_sites_removed.csv")) & removed == T){ #if post removed exists, and that is what you want
+if (file.exists(glue("{data_path}_sites_removed.csv")) & sites_removed == TRUE){ #if post removed exists, and that is what you want
   
   #read in data
   freshwater_wq_all <- read_csv(glue("{data_path}_sites_removed.csv"))
@@ -125,7 +135,7 @@ Once all the data has been loaded in we can begin to calculate results. However 
 #| label: calculate side statistics
 
 #select current fy and add the month column
-freshwater_wq_cy <- freshwater_wq_all |> filter(Fy == current_fyear) |> 
+freshwater_wq_cy <- freshwater_wq_all |> filter(Fy == script_fyear) |> 
   mutate(Month = month(Date, label = T))
 
 #calculate the number of months sampled, and the total number of samples
@@ -211,29 +221,26 @@ Once annual medians are done we can calculate the standardised scores for each w
 ```{r}
 #| label: calculate standardised scores
 
-#create standardised score function
-standardised_score <- function(Indicator, Value, Wqo, Sf, Eightieth, Twentieth){
+#use the custom function from RcTools to convert values to standardised scores
+fw_wq_annual_scored <- value_to_score(
+  df = fw_wq_annual,
+  value = AnnualMedianValues,
+  value_type = "Water Quality",
+  water_type = "Freshwater",
+  indicator = Indicator,
+  wqo = Wqo,
+  sf = Sf,
+  eightieth = Eightieth,
+  twentieth = Twentieth
+)
 
-  if (Indicator != "Low_DO"){ #if the indicator is not low DO use the standard scoring system (high = fail)
-    
-    score <- ifelse(Value > Wqo, pmax(60.9 - (60.9 * (abs((Value - Wqo)/(Sf - Wqo)))), 0),
-                    ifelse(Value <= Wqo & Eightieth > Wqo, 80.99 - (19.9 * (abs((Eightieth - Wqo)/(Eightieth - Value)))), 90))
-    
-  } else { #else for the low DO indicator use a different scoring system (low = fail)
-    
-    score <- ifelse(Value < Wqo, pmax(60.9 - (60.9 * (abs((Value - Wqo)/(Sf - Wqo)))), 0),
-                    ifelse(Value >= Wqo & Twentieth < Wqo, 80.99 - (19.9 * (abs((Wqo - Twentieth)/(Value - Twentieth)))), 90))
-    
-  }
-}
-
-#run function using a rowwise grouping (each "group" is a single row) then select required columns and rows
-fw_wq_annual <- fw_wq_annual |> 
-  rowwise() |> 
-  mutate(Score = standardised_score(Indicator, AnnualMedianValues, Wqo, Sf, Eightieth, Twentieth)) |> 
-  ungroup() |> 
-  select(Region, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Indicator, Score, SubBasinArea, SubBasinProportionOfBasin) |> 
-  distinct() |> filter(!is.na(Score))
+#refine dataset to just columns and rows we want
+fw_wq_annual_scored <- fw_wq_annual_scored |> 
+  select(
+    Region, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, 
+    Indicator, AnnualMedianValuesScore, SubBasinArea, SubBasinProportionOfBasin) |> 
+  distinct() |> 
+  filter(!is.na(AnnualMedianValuesScore))
 
 ```
 
@@ -245,8 +252,8 @@ To calculate indicator category and index scores we first need to prepared the d
 #| label: prepare data
 
 #pivot data wider and convert columns to factors to set up for the impending calculation
-fw_wq_annual_wide <- fw_wq_annual |> 
-  pivot_wider(names_from = Indicator, values_from = Score)
+fw_wq_annual_wide <- fw_wq_annual_scored |> 
+  pivot_wider(names_from = Indicator, values_from = AnnualMedianValuesScore)
 
 #clean the names up
 fw_wq_annual_wide <- name_cleaning(fw_wq_annual_wide)
@@ -261,10 +268,10 @@ Before we can then perform the require rowwise operations.
 #calculate indicator categories and indices scores
 fw_wq_all <- fw_wq_annual_wide |> 
   rowwise() |> 
-  mutate(Nutrients = mean(c(Din, Tp), na.rm = T),
-         MinDo = min(c(HighDo, LowDo), na.rm = T),
-         PhysChem = mean(c(Turbidity, MinDo), na.rm = T),
-         OverallWq = mean(c(Nutrients, PhysChem), na.rm = T),
+  mutate(Nutrients = mean(c(Din, Tp), na.rm = TRUE),
+         MinDo = min(c(HighDo, LowDo), na.rm = TRUE),
+         PhysChem = mean(c(Turbidity, MinDo), na.rm = TRUE),
+         OverallWq = mean(c(Nutrients, PhysChem), na.rm = TRUE),
          across(where(is.numeric), ~ifelse(is.infinite(.), NA, .))) |>
   ungroup()
 
@@ -306,12 +313,11 @@ sub_basin_scores_save <- sub_basin_scores |> ungroup() |>
 
 #run the "save as n3 table" function
 save_n3_table(
-  df = sub_basin_scores_save, #select your data frame
-  file_name = glue("{output_path}/fw_appendix_sub_basin_scores"), #pick a name for your output file
-  target_columns = 2:4, #specify which columns to format
-  target_rows = 1:nrow(sub_basin_scores_save), #specify which rows to format
-  scheme = "Report Card", #define the formatting scheme
-  include_letter = FALSE #decide if you want to include letter grades
+  df = sub_basin_scores_save, 
+  file_name = glue("{output_path}/fw_appendix_sub_basin_scores"), 
+  target_columns = 2:4, 
+  target_rows = 1:nrow(sub_basin_scores_save), 
+  scheme = "Report Card"
 )
 
 ```
@@ -354,21 +360,7 @@ Finally, both the weighted and unweighted scores can be converted to a grade.
 ```{r}
 #| label: convert score to grade
 
-#create score to grade function
-score_to_grade <- function(Score) {
-  
-  Grade <- ifelse(Score >= 81, "A",
-                  ifelse(Score >= 61, "B",
-                         ifelse(Score >= 41, "C",
-                                ifelse(Score >= 21, "D", "E"))))
-}
-
-#apply score to grade function to each column
-fw_wq_all_scores_grades_raw <- fw_wq_all_weighted |> 
-  mutate(
-    across(9:length(fw_wq_all_weighted), 
-    \(x) score_to_grade(x),
-    .names = "{.col}_Grade"))
+fw_wq_all_scores_grades_raw <- score_to_grade(fw_wq_all_weighted, 7:length(fw_wq_all_weighted))
 
 ```
 
@@ -410,52 +402,56 @@ write_csv(fw_wq_all_scores_grades_floor, glue("{output_path}/fw_wq_all_scores_gr
 nut_phys_chem_prep <- fw_wq_all_scores_grades_floor |> 
   rename("Weighting(%)" = SubBasinProportionOfBasin, 
          "Area(km2)" = SubBasinArea) |> 
-  mutate(SubBasinNutrientsWeighted = case_when(!is.na(WatercourseOrGeographicArea) ~ NA,
-                                                  is.na(SubBasinOrSubZone) ~ NA,
-                                                  T ~ NutrientsWeighted),
-         SubBasinPhysChemWeighted = case_when(!is.na(WatercourseOrGeographicArea) ~ NA, 
-                                                  is.na(SubBasinOrSubZone) ~ NA,
-                                                  T ~ PhysChemWeighted),
-         NutrientsWeighted = case_when(!is.na(SubBasinOrSubZone) ~ NA, 
-                                        T ~ NutrientsWeighted),
-         PhysChemWeighted = case_when(!is.na(SubBasinOrSubZone) ~ NA, 
-                                        T ~ PhysChemWeighted),
-         "Area(km2)" = case_when(!is.na(WatercourseOrGeographicArea) ~ NA, 
-                                  T ~ `Area(km2)`),
-         "Weighting(%)" = case_when(is.na(`Weighting(%)`) ~ 1, 
-                                     !is.na(WatercourseOrGeographicArea) ~ NA, 
-                                     T ~ `Weighting(%)`))
+  mutate(
+    SubBasinNutrientsWeighted = case_when(
+      !is.na(WatercourseOrGeographicArea) ~ NA,
+      is.na(SubBasinOrSubZone) ~ NA,
+      TRUE ~ NutrientsWeighted),
+    SubBasinPhysChemWeighted = case_when(
+      !is.na(WatercourseOrGeographicArea) ~ NA, 
+      is.na(SubBasinOrSubZone) ~ NA,
+      TRUE ~ PhysChemWeighted),
+    NutrientsWeighted = case_when(
+      !is.na(SubBasinOrSubZone) ~ NA, 
+      TRUE ~ NutrientsWeighted),
+    PhysChemWeighted = case_when(
+      !is.na(SubBasinOrSubZone) ~ NA, 
+      TRUE ~ PhysChemWeighted),
+    "Area(km2)" = case_when(
+      !is.na(WatercourseOrGeographicArea) ~ NA, 
+      TRUE ~ `Area(km2)`),
+    "Weighting(%)" = case_when(
+      is.na(`Weighting(%)`) ~ 1, 
+      !is.na(WatercourseOrGeographicArea) ~ NA, 
+      TRUE ~ `Weighting(%)`))
 
 #select columns for the nutrients table
 nutrients_table <- nut_phys_chem_prep |> 
-  select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Din, Tp, Nutrients, "Weighting(%)", "Area(km2)", 
-         SubBasinNutrientsWeighted, NutrientsWeighted) |> 
+  select(
+    BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Din, Tp, Nutrients, 
+    "Weighting(%)", "Area(km2)", SubBasinNutrientsWeighted, NutrientsWeighted) |> 
   arrange(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea)
-
-#run the "save as n3 table" function
-save_n3_table(
-  df = nutrients_table, #select your data frame
-  file_name = glue("{output_path}/fw_nutrients"), #pick a name for your output file
-  target_columns = 4:10, #specify which columns to format
-  target_rows = 1:nrow(nutrients_table), #specify which rows to format
-  scheme = "Report Card", #define the formatting scheme
-  include_letter = FALSE #decide if you want to include letter grades
-)
 
 #select columns for the phys_chem table
-phys_chem_table <- nut_phys_chem_prep |> 
-  select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, HighDo, LowDo, Turbidity, PhysChem, "Weighting(%)", "Area(km2)", 
-         SubBasinPhysChemWeighted, PhysChemWeighted) |> 
+physchem_table <- nut_phys_chem_prep |> 
+  select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, HighDo, LowDo, Turbidity, 
+  PhysChem, "Weighting(%)", "Area(km2)", SubBasinPhysChemWeighted, PhysChemWeighted) |> 
   arrange(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea)
 
-#run the "save as n3 table" function
 save_n3_table(
-  df = phys_chem_table, #select your data frame
-  file_name = glue("{output_path}/fw_phys_chem"), #pick a name for your output file
-  target_columns = 4:11, #specify which columns to format
-  target_rows = 1:nrow(phys_chem_table), #specify which rows to format
-  scheme = "Report Card", #define the formatting scheme
-  include_letter = FALSE #decide if you want to include letter grades
+  nutrients_table,
+  glue("{output_path}/fw_nutrients"),
+  c(4:10),
+  1:nrow(nutrients_table),
+  scheme = "Report Card"
+)
+
+save_n3_table(
+  physchem_table,
+  glue("{output_path}/fw_physchem"),
+  c(4:11),
+  1:nrow(physchem_table),
+  scheme = "Report Card"
 )
 
 ```

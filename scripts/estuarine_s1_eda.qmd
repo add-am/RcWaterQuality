@@ -128,6 +128,12 @@ site_metadata <- site_metadata |>
 #run the custom naming cleaning function to ensure everything is formatted as it should be
 site_metadata <- name_cleaning(site_metadata)
 
+#read in the historical sites and just keep the site codes, this is all that is needed to  filter the data later
+historical_metadata <- read_excel(
+  glue("{data_path}/dt_wq_estuarine_metadata.xlsx"),
+  sheet = "Historic_Sites", na = c("", "NA", "NULL", "null")) |> 
+    pull(Code)
+
 #clean up
 rm(target_sheets, temp_sheet)
 
@@ -230,6 +236,17 @@ rm(DES, Ornatas, POTL, TCC, estuarine_wq)
 
 ```
 
+### Drop Historical Sites
+
+Below a simple vector is used to filter out any sites that were listed as historic (i.e. no longer used).
+
+```{r}
+
+#only keep sites that don't exist in the historical sites list
+estuarine_wq_all <- filter(estuarine_wq_all, !Code %in% historical_metadata)
+
+```
+
 # QA/QC Checks
 
 We can now take this opportunity to perform the required QA/QC Checks, at the moment this includes:
@@ -288,7 +305,7 @@ location_check <- estuarine_wq_all |>
   summarize(.groups = "drop")
 
 #then check if we have the right number of locations
-if (nrow(location_check) == 13 & !any(is.na(location_check))){
+if (nrow(location_check) == 12 & !any(is.na(location_check))){
   
   print("Test passed. Correct number of locations.")
   
@@ -299,7 +316,7 @@ if (nrow(location_check) == 13 & !any(is.na(location_check))){
   #save csv
   write_csv(location_check, glue("{output_path}/spreadsheets/location_check.csv"))
 
-stop("Test fail, currently the DT report should have 13 unique watercourses, please cross check if 
+stop("Test fail, currently the DT report should have 12 unique watercourses, please cross check if 
      there are locations missing, or if there have been new locations added. Review the 
      'location_check' table for more information.")
 }
@@ -311,7 +328,7 @@ code_check <- estuarine_wq_all |>
   summarize(.groups = "drop")
 
 #then check if we have the right number of watercourses and codes
-if (nrow(code_check) == 22 & !any(is.na(code_check))){
+if (nrow(code_check) == 16 & !any(is.na(code_check))){
   
   print("Test passed. Correct number of sites.")
   
@@ -322,7 +339,7 @@ if (nrow(code_check) == 22 & !any(is.na(code_check))){
   #save csv
   write_csv(code_check, glue("{output_path}/spreadsheets/code_check.csv"))
 
-stop("Test fail, currently the DT report should have 22 unique codes(sites), please cross check if 
+stop("Test fail, currently the DT report should have 16 unique codes(sites), please cross check if 
      there are codes missing, or if there have been new codes added. Review the 'code_check' table
      for more information.")
 }

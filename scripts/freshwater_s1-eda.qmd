@@ -129,6 +129,12 @@ site_metadata <- site_metadata |>
 #run the custom naming cleaning function to ensure everything is formatted as it should be
 site_metadata <- name_cleaning(site_metadata)
 
+#read in the historical sites and just keep the site codes, this is all that is needed to  filter the data later
+historical_metadata <- read_excel(
+  glue("{data_path}/dt_wq_freshwater_metadata.xlsx"),
+  sheet = "Historic_Sites", na = c("", "NA", "NULL", "null")) |> 
+    pull(Code)
+
 #clean up
 rm(target_sheets, temp_sheet)
 
@@ -230,6 +236,17 @@ freshwater_wq_all <- name_cleaning(freshwater_wq_all)
 
 #clean up
 rm(DES, TCC_Wastewater, TCC_Other, CLMP, freshwater_wq)
+
+```
+
+### Drop Historical Sites
+
+Below a simple vector is used to filter out any sites that were listed as historic (i.e. no longer used).
+
+```{r}
+
+#only keep sites that don't exist in the historical sites list
+freshwater_wq_all <- filter(freshwater_wq_all, !Code %in% historical_metadata)
 
 ```
 

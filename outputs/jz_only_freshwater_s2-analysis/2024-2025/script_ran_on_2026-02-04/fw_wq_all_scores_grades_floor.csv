@@ -1,0 +1,4 @@
+Region,BasinOrZone,SubBasinOrSubZone,WatercourseOrGeographicArea,SubBasinArea,SubBasinProportionOfBasin,Turbidity,Din,Tp,HighDo,LowDo,Nutrients,MinDo,PhysChem,OverallWq,DinWeighted,HighDoWeighted,LowDoWeighted,TpWeighted,TurbidityWeighted,NutrientsWeighted,PhysChemWeighted,OverallWqWeighted,TurbidityGrade,DinGrade,TpGrade,HighDoGrade,LowDoGrade,NutrientsGrade,MinDoGrade,PhysChemGrade,OverallWqGrade,DinWeightedGrade,HighDoWeightedGrade,LowDoWeightedGrade,TpWeightedGrade,TurbidityWeightedGrade,NutrientsWeightedGrade,PhysChemWeightedGrade,OverallWqWeightedGrade
+DT,Ross,Stuart Creek,Stuart Inside TSDA,105,0.08,68,0,0,90,0,0,0,34,17,0,7.3,0,0,5.6,0,2.8,1.4,B,E,E,A,E,E,E,D,E,E,E,E,E,E,E,E,E
+DT,Ross,Stuart Creek,NA,105,0.08,68,0,0,90,0,0,NA,34,17,0,7.3,0,0,5.6,0,2.8,1.4,B,E,E,A,E,E,E,D,E,E,E,E,E,E,E,E,E
+DT,Ross,NA,NA,105,NA,68,0,0,90,0,0,NA,34,17,0,7.3,0,0,5.6,0,2.8,1.4,B,E,E,A,E,E,E,D,E,E,E,E,E,E,E,E,E
