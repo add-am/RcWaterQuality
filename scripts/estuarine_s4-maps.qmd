@@ -116,7 +116,7 @@ for (i in unique(dt_region$BasinOrZone)){
   #filter sites and rename column
   filtered_sites <- sites |> 
     filter(BasinOrZone == i) |>
-     rename("Sub Basin: Reported" = SubBasinOrSubZone)
+    rename("Sub Basin: Reported" = SubBasinOrSubZone)
   
   #define focus area and rename column
   focus_area <- dt_region |> 

@@ -37,6 +37,9 @@ setup_helper <- function(Year){
 
   #create the full output path that includes the year of data analysed and the date the analysis occured
   output_path <- here::here(glue::glue('outputs/{short_path}/{Year-1}-{Year}/script_ran_on_{format(Sys.time(), "%Y-%m-%d")}/'))
+
+  #create folder
+  dir.create(output_path, recursive = TRUE)
   
   #strip the script name to the very base (just the environment)
   striped_short_path <- stringr::str_extract(short_path, "estuarine|freshwater|inshore|pesticides")
@@ -65,13 +68,6 @@ setup_helper <- function(Year){
             
     #direct the path to a specific file in the "processed" folder
     data_path <- glue::glue("{data_path}/processed/{Year-1}-{Year}_{water_type}_wq_all")
-
-    #create folder
-    dir.create(output_path, recursive = TRUE)
-
-    #create folders for the plots and maps to be stored separately (since there are so many)
-    #dir.create(glue::glue("{output_path}/plots/"), recursive = TRUE)
-    #dir.create(glue::glue("{output_path}/maps/"), recursive = TRUE)
       
   }
 

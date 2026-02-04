@@ -132,7 +132,7 @@ Once all the data has been loaded in we can begin to calculate results. However 
 
 #select current fy and add the month column
 estuarine_wq_cy <- estuarine_wq_all |> filter(Fy == script_fyear) |> 
-  mutate(Month = month(Date, label = T))
+  mutate(Month = month(Date, label = TRUE))
 
 #calculate the number of months sampled, and the total number of samples
 estuarine_wq_cy <- estuarine_wq_cy |> 
@@ -154,7 +154,7 @@ Below we calculate monthly median values for each watercourse, this is particula
 est_wq_monthly <- estuarine_wq_cy |> 
   group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Fy, Month, NMonths, NSamples, Indicator, 
            Units, Wqo, Sf, SubBasinArea, SubBasinProportionOfBasin) |> 
-  summarise(MonthlyMedianValues = median(Values, na.rm = T)) |> 
+  summarise(MonthlyMedianValues = median(Values, na.rm = TRUE)) |> 
   ungroup()
 
 ```
@@ -169,7 +169,7 @@ Then we will calculate annual medians, plus twentieth and eightieth percentiles 
 #group up using the same reverse grouping trick and calculate values
 est_wq_annual <- est_wq_monthly |> 
   group_by(across(c(-MonthlyMedianValues, -Month))) |> 
-  mutate(AnnualMedianValues = median(MonthlyMedianValues, na.rm = T),
+  mutate(AnnualMedianValues = median(MonthlyMedianValues, na.rm = TRUE),
          Twentieth = quantile(MonthlyMedianValues, probs = 0.2, na.rm = TRUE),
          Eightieth = quantile(MonthlyMedianValues, probs = 0.8, na.rm = TRUE)) |> 
   ungroup()
@@ -321,12 +321,6 @@ save_n3_table(
   scheme = "Report Card"
 )
 
-#load in custom function
-#source(here("functions/cond_form_rc_grades.R"))
-
-#save data
-#cond_form_rc_grades(sub_basin_scores_save, glue("{output_path}/est_appendix_sub_basin_scores"), cols = c(2:4), method = "numeric")
-
 ```
 
 ## Weighted Scores
@@ -443,8 +437,9 @@ nutrients_table <- nutri_physchem_prep |>
 
 #select columns for the PhysChem table
 physchem_table <- nutri_physchem_prep |> 
-  select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, HighDo, LowDo, Turbidity, PhysChem, "Weighting(%)", "Area(km2)", 
-         SubBasinPhysChemWeighted, PhysChemWeighted) |> 
+  select(
+    BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, HighDo, LowDo, Turbidity, 
+    PhysChem, "Weighting(%)", "Area(km2)", SubBasinPhysChemWeighted, PhysChemWeighted) |> 
   arrange(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea)
 
 save_n3_table(

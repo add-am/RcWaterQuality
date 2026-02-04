@@ -5,9 +5,22 @@ description: "Script 4 in a series of script designed to analyse, score, and pre
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2024 
+  script_crs: "EPSG:7844"
+  script_fyear: 2024 
 ---
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+
+```
 
 # Introduction
 
@@ -25,33 +38,41 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #use pacman function to load and install (if required) all other packages
 pacman::p_load(tidyverse, glue, here, sf, tmap, janitor, readxl, grid, RColorBrewer)
 
-if (interactive()) {
-params <- rmarkdown::yaml_front_matter(rstudioapi::getSourceEditorContext()$path)$params
-}
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
 
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
-#read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
-
-#turn off spherical geometry
-sf_use_s2(F)
-
-#determine if we want the dataset to be the one with removed sites, or the original
-removed <- params$sites_removed
-
-#set the project crs
-proj_crs <- params$project_crs
+#turn off scientific notation
+options(scipen = 999)
 
 ```
 
 # Load Data
 
-Now the script is set up we need to load in all of the required datasets. Spatial data for the northern three regions should be readily available in the repo, the dataset is created by the n3_region-builder.qmd script in the repo that should be the first script run for new users. If the dataset is not available refer back to the README document in the GitHub repo. The other parts of spatial data here should go off without a hitch if the region-builder script has been run.
+## Spatial Data
+
+A custom function build (or reloads) the n3_region dataset.
+
+``` {r}
+#| label: Load data
+
+#if the data is on file, load it, otherwise built it and save it for next time
+if (file.exists(here("data/n3_region.gpkg"))){
+  n3_region <- st_read(here("data/n3_region.gpkg"))
+} else {
+  n3_region <- build_n3_region()
+  st_write(n3_region, here("data/n3_region.gpkg"))
+}
+
+```
 
 ```{r}
 #| label: load in all data
@@ -68,9 +89,7 @@ dt_region <- n3_region |>
 #read in site coords and convert to a simple feature object
 sites <- read_excel(path = glue("{data_path}/dt_wq_freshwater_metadata.xlsx"), sheet = "Current_Sites") |> 
   select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Code, Lat, Long) |> 
-  st_as_sf(coords = c("Long", "Lat"), crs = proj_crs)
-
-st_write(sites, "fw_sites.gpkg")
+  st_as_sf(coords = c("Long", "Lat"), crs = script_crs)
 
 ```
 
@@ -81,75 +100,59 @@ Now we can put everything together. We will loop over the Ross and Black to make
 ```{r}
 #| label: create region maps
 
-#load in custom function to create the water related layers of the map
-source(here("functions/maps_water_layer.R"))
-
-#load in custom function to create the inset map
-source(here("functions/maps_inset_layer.R"))
-
-#create a background of the burdekin region for the inset map
-dt_background <- n3_region |> 
-  filter(Region == "Dry Tropics", Environment != "Marine") |> 
-  group_by(Region) |> summarise(geom = st_union(geom))
-
-#create a point of interest for townsville
-tsv <- poi |> filter(PlaceName == "Townsville")
-
-#create target vector to loop lover
-target_vect <- unique(dt_region$BasinOrZone)
-
-for (i in target_vect){
+for (i in unique(dt_region$BasinOrZone)){
   
   #filter sites and rename column
-  filtered_sites <- sites |> filter(BasinOrZone == i) |> rename("Sub Basin: Reported" = SubBasinOrSubZone)
+  filtered_sites <- sites |> 
+    filter(BasinOrZone == i) |> 
+    rename("Sub Basin: Reported" = SubBasinOrSubZone)
   
   #define focus area and rename column
-  focus_area <- dt_region |> filter(BasinOrZone == i) |> rename("Sub Basin: All" = SubBasinOrSubZone)
+  focus_area <- dt_region |> 
+    filter(BasinOrZone == i) |> 
+    rename("Sub Basin: All" = SubBasinOrSubZone)
   
   #create the base water layer for the specific basin
-  maps_water_layer(stream_order = c(2,9), water_lines = T, water_polygons = T, 
-                   basin_or_zone = i, enviro = "Freshwater", fast = T)
-  
+  water_layer <- maps_water_layer(i, WaterAreas = TRUE, WaterLakes = TRUE, StreamOrder = 2)
+
   #create the background layer using the broader dry tropics backdrop
-  maps_inset_layer(supplied_sf_1 = focus_area, background = dt_background, aspect = 1, use_bbox_1 = FALSE)
+  inset_objects <- maps_inset_layer(filtered_sites, focus_area, 1.1)
 
   #build on these two layers with customization
   map <- tm_shape(qld) +
     tm_polygons(fill = "grey80") +
     tm_shape(focus_area) +
-    tm_polygons(fill = "grey90", 
-                col = "grey90") +
+    tm_polygons(fill = "grey90", col = "grey90") +
     tm_shape(focus_area, is.main = T) +
-    tm_polygons(fill = "Sub Basin: All", 
-                fill_alpha = 0.5, 
-                fill.scale = tm_scale_categorical(values = "brewer.pastel1"),
-                col = "black") +
-    water_map +
-    tm_shape(tsv) +
-    tm_symbols(size = 0.3, 
-               fill = "white", 
-               col = "black", 
-               lwd = 1, 
-               shape = 23) +
-    tm_text("PlaceName", 
-            size = 0.6,
-            options = opt_tm_text(shadow = T, point.label = T)) +
+    tm_polygons(
+      fill = "Sub Basin: All", 
+      fill_alpha = 0.5, 
+      fill.scale = tm_scale_categorical(values = "brewer.pastel1"),
+      col = "black") +
+    water_layer +
     tm_shape(filtered_sites) +
-    tm_symbols(size = 0.6, 
-               fill = "Sub Basin: Reported", 
-               fill.scale = tm_scale_categorical(values = "brewer.set1"),
-               col = "black", 
-               lwd = 2, 
-               shape = 21) +
-    tm_text("Code", 
-            size= 0.9,
-            options = opt_tm_text(shadow = T, point.label = T)) +
-    tm_layout(legend.bg.color = "white", 
-              legend.position = c("left", "bottom"),
-              asp = 1)
+    tm_symbols(
+      size = 0.6, 
+      fill = "Sub Basin: Reported", 
+      fill.scale = tm_scale_categorical(values = "brewer.set1"),
+      col = "black", 
+      lwd = 2, 
+      shape = 21) +
+    tm_text(
+      "Code",
+      size= 0.9,
+      options = opt_tm_text(shadow = TRUE, point.label = TRUE)) +
+    tm_layout(
+      legend.bg.color = "white", 
+      legend.position = c("left", "bottom"),
+      asp = 1.1)
 
   #save map
-  tmap_save(map, glue("{output_path}/{i}_Freshwater.png"), insets_tm = inset_map, insets_vp = inset_viewport)
+  tmap_save(
+    map, 
+    glue("{output_path}/{i}_Freshwater.png"), 
+    insets_tm = inset_objects[[1]], 
+    insets_vp = inset_objects[[2]])
   
 }
 
@@ -162,63 +165,66 @@ Below we will create the same maps, but now with sites de-identified.
 ```{r}
 #| label: create deidentifed region maps
 
-#create target vector to loop lover
-target_vect <- unique(dt_region$BasinOrZone)
-
-for (i in target_vect){
+for (i in unique(dt_region$BasinOrZone)){
   
 #filter sites and rename column
-  filtered_sites <- sites |> filter(BasinOrZone == i) |> rename("Sub Basin: Reported" = SubBasinOrSubZone)
+  filtered_sites <- sites |> 
+    filter(BasinOrZone == i) |> 
+    rename("Sub Basin: Reported" = SubBasinOrSubZone)
   
   #define focus area and rename column
-  focus_area <- dt_region |> filter(BasinOrZone == i) |> rename("Sub Basin: All" = SubBasinOrSubZone)
+  focus_area <- dt_region |> 
+    filter(BasinOrZone == i) |> 
+    rename("Sub Basin: All" = SubBasinOrSubZone)
   
-  #create the base water layer for the specific basin
-  maps_water_layer(stream_order = c(2,9), water_lines = T, water_polygons = T, 
-                   basin_or_zone = i, enviro = "Freshwater", fast = T)
-  
+    #create the base water layer for the specific basin
+  water_layer <- maps_water_layer(i, WaterAreas = TRUE, WaterLakes = TRUE, StreamOrder = 2)
+
   #create the background layer using the broader dry tropics backdrop
-  maps_inset_layer(supplied_sf_1 = focus_area, background = dt_background, aspect = 1, use_bbox_1 = FALSE)
+  inset_objects <- maps_inset_layer(filtered_sites, focus_area, 1.1)
 
   #build on these two layers with customization
   map <- tm_shape(qld) +
     tm_polygons(fill = "grey80") +
     tm_shape(focus_area) +
-    tm_polygons(fill = "grey90", 
-                col = "grey90") +
+    tm_polygons(fill = "grey90", col = "grey90") +
     tm_shape(focus_area, is.main = T) +
-    tm_polygons(fill = "Sub Basin: All", 
-                fill_alpha = 0.5, 
-                fill.scale = tm_scale_categorical(values = "brewer.pastel1"),
-                col = "black") +
-    water_map +
-    tm_shape(tsv) +
-    tm_symbols(size = 0.3, 
-               fill = "white", 
-               col = "black", 
-               lwd = 1, 
-               shape = 23) +
-    tm_text("PlaceName", 
-            size = 0.6,
-            options = opt_tm_text(shadow = T, point.label = T)) +
+    tm_polygons(
+      fill = "Sub Basin: All", 
+      fill_alpha = 0.5, 
+      fill.scale = tm_scale_categorical(values = "brewer.pastel1"),
+      col = "black") +
+    water_layer +
     tm_shape(filtered_sites) +
-    tm_symbols(size = 0.6, 
-               fill = "Sub Basin: Reported", 
-               fill.scale = tm_scale_categorical(values = "brewer.set1"),
-               col = "black", 
-               lwd = 2, 
-               shape = 21) +
-    #tm_text("Code", #removed as these are the deidentified maps
-    #        size = 0.9,
-    #        options = opt_tm_text(shadow = T, point.label = T)) +
-    tm_layout(legend.bg.color = "white", 
-              legend.position = c("left", "bottom"),
-              asp = 1)
-  
+    tm_symbols(
+      size = 0.6, 
+      fill = "Sub Basin: Reported", 
+      fill.scale = tm_scale_categorical(values = "brewer.set1"),
+      col = "black", 
+      lwd = 2, 
+      shape = 21) +
+    #tm_text(
+    #  "Code",
+    #  size= 0.9,
+    #  options = opt_tm_text(shadow = TRUE, point.label = TRUE)) +
+    tm_layout(
+      legend.bg.color = "white", 
+      legend.position = c("left", "bottom"),
+      asp = 1.1)
+
   #save map
-  tmap_save(map, glue("{output_path}/{i}_de-identified_Freshwater.png"), insets_tm = inset_map, insets_vp = inset_viewport)
+  tmap_save(
+    map, 
+    glue("{output_path}/{i}_Freshwater.png"), 
+    insets_tm = inset_objects[[1]], 
+    insets_vp = inset_objects[[2]])
 
 }
+
+```
+
+```{r}
+
 
 ```
 

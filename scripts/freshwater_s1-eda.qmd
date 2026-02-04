@@ -5,9 +5,22 @@ description: "Script 1 in a series of script designed to analyse, score, and pre
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2024 
+  script_crs: "EPSG:7844"
+  script_fyear: 2024 
 ---
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+
+```
 
 # Introduction
 
@@ -29,16 +42,23 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #| label: load packages
 
 #use pacman function to load and install (if required) all other packages
-pacman::p_load(tidyverse, glue, here, sf, tmap, janitor, readxl, ggplot2, busdater)
+pacman::p_load(tidyverse, glue, here, sf, tmap, janitor, readxl, ggplot2, viridis, busdater, stars)
+
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
 
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
-##read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
+#turn off scientific notation
+options(scipen = 999)
+sf_use_s2(FALSE)
 
 ```
 
@@ -147,7 +167,7 @@ for (i in 2:length(sheets)){
                   Date = Date + seconds(1), #add one second to avoid date-time error
                   Date = ymd_hms(Date), Fy = get_fy(Date), .after = Date) |> 
            filter(Fy > 2012,
-                  Fy <= current_fyear)) #to allow for specific reporting year targeting
+                  Fy <= script_fyear)) #to allow for specific reporting year targeting
 }
 
 #clean up
@@ -266,8 +286,8 @@ We will check the number of locations found in the dataset matches what we expec
 
 #group by the different levels of location
 location_check <- freshwater_wq_all |>
-  filter(Fy == current_fyear) |> #make sure we are only checking the current year of data
-  group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, Watercourse) |> 
+  filter(Fy == script_fyear) |> #make sure we are only checking the current year of data
+  group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea) |> 
   summarize(.groups = "drop")
 
 #then check if we have the right number of locations
@@ -289,8 +309,8 @@ stop("Test fail, currently the DT report should have 16 unique watercourses, ple
 
 #group by watercourse and code
 code_check <- freshwater_wq_all |> 
-  filter(Fy == current_fyear) |> #make sure we are only checking the current year of data
-  group_by(Watercourse, Code) |> 
+  filter(Fy == script_fyear) |> #make sure we are only checking the current year of data
+  group_by(WatercourseOrGeographicArea, Code) |> 
   summarize(.groups = "drop")
 
 #then check if we have the right number of watercourses and codes
@@ -322,7 +342,7 @@ We will now compare the LOR values against the concentration values recorded in 
 
 #check how many values are half of the LOR compared to the total number of values for the reporting period
 value_lor_check <- freshwater_wq_all |> 
-  filter(Fy == current_fyear) |> 
+  filter(Fy == script_fyear) |> 
   mutate(`ValueHalved?` = case_when(Values <= Lor ~ "ValueHalved", 
                                      T ~ "ValueUnchanged")) |> 
   group_by(Code, Indicator, `ValueHalved?`) |> 
@@ -371,7 +391,7 @@ For any site that is flagged, the offending indicator will be removed.
 
 #check if the LOR is equal to or greater than the WQO, whilst also checking if any values are also in this range
 wqo_lor_check_p1 <- freshwater_wq_all |> 
-  filter(Fy == current_fyear, Indicator != Lor) |> #this gets current year and ignore FRP
+  filter(Fy == script_fyear, Indicator != Lor) |> #this gets current year and ignore FRP
   mutate(Comparison = case_when(Lor >= Wqo & Values > Lor ~ "Val_Warn",
                                 Lor >= Wqo & Values <= Lor ~ "Val_Fail",
                                 T ~ "Val_Pass")) |>
@@ -416,7 +436,7 @@ if (any("Val_Fail" %in% colnames(wqo_lor_check_p1))){
       select(Code, Indicator)
   
     #use the full dataset to add all information about the code-indicator pair of any failed sites
-    removal_table <- semi_join(filter(freshwater_wq_all, Fy == current_fyear), removal_table, by = join_by(Code, Indicator))
+    removal_table <- semi_join(filter(freshwater_wq_all, Fy == script_fyear), removal_table, by = join_by(Code, Indicator))
   
     #subtract from the main table, any rows that appear in the removal table
     freshwater_wq_removed <- suppressMessages(anti_join(freshwater_wq_all, removal_table))
@@ -466,7 +486,7 @@ After some mostly automated QA/QC we will now conduct some exploratory data anal
 ```{r}
 #| label: select this years data
 
-freshwater_wq_cy <- freshwater_wq_all |> filter(Fy == current_fyear)
+freshwater_wq_cy <- freshwater_wq_all |> filter(Fy == script_fyear)
 
 ```
 
@@ -599,83 +619,68 @@ temp_plot
 
 We can then look at the timing of rainfall and when the samples were taken. (Note that to obtain rainfall data we have to take a slight detour).
 
-```{r}
-#| label: rainfall eda
+A custom function builds (or reloads) the n3_region dataset.
 
-#first we will need to load in a few extra packages to do some spatial work
-library(sf)
-library(terra)
-library(exactextractr)
+``` {r}
+#| label: Load data
 
-#turn off spherical geometry
-sf_use_s2(F)
-
-#read in the northern three data and cut down to freshwater dry tropics only
-dry_tropics <- n3_region |> 
-  filter(Environment == "Freshwater", Region == "Dry Tropics")
-
-#set a path to the saved output
-path <- glue("{data_path}/../rainfall/sub_basin_rainfall.csv")
-
-if (file.exists(path) == T){ #if it exists, read it in
-  
-  sub_basin_rain <- read_csv(path)
-  
-} else { #otherwise make it 
-  
-  #get list of rainfall files
-  file_list <- list.files(glue("{data_path}/../rainfall"), pattern = "rain_day_20", full.names = TRUE, recursive = TRUE)
-  
-  #combine all files
-  all_rain <- rast(file_list)
-  
-  #update crs info
-  crs(all_rain) <- proj_crs
-
-  #create a buffer around the dry tropics
-  buff <- st_buffer(dry_tropics, units::set_units(0.05, degree))
-
-  #use trim to remove NAs, and mask to designate area
-  dt_rain <- trim(mask(all_rain, vect(buff)))
-  
-  #save the cut down version
-  writeCDF(dt_rain, glue("{data_path}/../rainfall/rain_day_all.nc"), overwrite = T)
-  
-  #read in the cut down version
-  dt_rain <- rast(glue("{data_path}/../rainfall/rain_day_all.nc"))
-  
-  #create a tibble of layer names and dates
-  name_date <- tibble("layer_name" = names(dt_rain), "layer_date" = time(dt_rain))
-  
-  #extract values for each subbasin for each day
-  sub_basin_rain <- tibble(exact_extract(dt_rain, dry_tropics, fun = "mean", append_cols = T))
-  
-  #fix column names
-  names(sub_basin_rain) <- sub('mean.', '', names(sub_basin_rain))
-
-  #pivot the data and round values, then use left_join() to add layer dates, and clean up other columns
-  sub_basin_rain <- pivot_longer(sub_basin_rain, cols = 6:ncol(sub_basin_rain),
-                                 names_to = "layer_name", values_to = "mean_rainfall") |> 
-    left_join(name_date, by = "layer_name") |> 
-    #rename(Sub_Basin = sub_basin_or_sub_zone, Rainfall = mean_rainfall) |> 
-    mutate(Date = ymd_hms(paste(layer_date, "23:00:00")),
-           SubBasinOrSubZone = case_when(str_detect(SubBasinOrSubZone, "Lower") ~ "Lower Ross River",
-                                 str_detect(SubBasinOrSubZone, "Upper") ~ "Upper Ross River",
-                                 str_detect(SubBasinOrSubZone, "Palum") ~ "Paluma Dam",
-                                 T ~ Sub_Basin)) |> 
-    select(SubBasinOrSubZone, Rainfall, Date)
-  
-  #save
-  write_csv(sub_basin_rain, path)
-  
+#if the data is on file, load it, otherwise built it and save it for next time
+if (file.exists(here("data/n3_region.gpkg"))){
+  n3_region <- st_read(here("data/n3_region.gpkg"))
+} else {
+  n3_region <- build_n3_region()
+  st_write(n3_region, here("data/n3_region.gpkg"))
 }
-
-#clean up
-rm(path)
 
 ```
 
-And then we can then create the plots
+Then the n3 region is used to extract (or reload) the rainfall data.
+
+```{r}
+#| label: rainfall eda
+
+#read in the northern three data and cut down to freshwater dry tropics only
+dry_tropics <- n3_region |> 
+  filter(Environment != "Marine", Region == "Dry Tropics") |> 
+  group_by(Region, BasinOrZone, SubBasinOrSubZone) |> 
+  summarise(geom = st_union(geom)) |> 
+  st_transform(script_crs)
+
+if (!file.exists(glue("{data_path}/rain.nc"))){
+
+  rain <- extract_rainfall(dry_tropics, "2012-01-31")
+  write_mdim(rain, glue("{data_path}/rain.nc"))
+
+} else {rain <- read_stars(glue("{data_path}/rain.nc"))}
+  
+#create a tibble of layer names and dates
+name_date <- tibble("layer_name" = names(rain), "layer_date" = time(rain))
+
+#get mean from all layers and convert into a table, clean column names and add metadata
+monthly_sub_basin_rainfall <- rain |> 
+  aggregate(dry_tropics, FUN = mean, na.rm = TRUE) |> 
+  as.data.frame() |>  
+  select(-geom) |> 
+  rename("MonthlyMeanRainfall" = 2, "LayerDate" = time) |> 
+  mutate(
+    BasinOrZone = rep(dry_tropics$BasinOrZone, nrow(name_date)),
+    SubBasinOrSubZone = rep(dry_tropics$SubBasinOrSubZone, nrow(name_date)),
+    MonthlyMeanRainfall = round(MonthlyMeanRainfall, 0))
+
+#edit some sub basin names to make them match
+sb_rain <- monthly_sub_basin_rainfall |> 
+  mutate(SubBasinOrSubZone = case_when(
+    str_detect(SubBasinOrSubZone, "(Lower)") ~ "Lower Ross River",
+    str_detect(SubBasinOrSubZone, "(Upper)") ~ "Upper Ross River",
+    str_detect(SubBasinOrSubZone, "Paluma") ~ "Paluma Dam",
+    TRUE ~ SubBasinOrSubZone)
+  ) #|> 
+  
+sb_rain <- sb_rain |>mutate("MonthlyMeanRainfall" = units::drop_units(MonthlyMeanRainfall))
+
+```
+
+And then we can then create the plots.
 
 ```{r}
 #| label: create rainfall plots
@@ -684,15 +689,18 @@ for (i in unique(freshwater_wq_all$Indicator)){#for each indicator
   for (j in unique(freshwater_wq_all$SubBasinOrSubZone)){#and each sub basin
     
     #filter for the data we want
-    freshwater_targeted <- freshwater_wq_all |> filter(Indicator == i, SubBasinOrSubZone == j)
-    rainfall_targeted <- sub_basin_rain |> filter(SubBasinOrSubZone == j, Date >= min(freshwater_targeted$Date))
+    freshwater_targeted <- freshwater_wq_all |> 
+      filter(Indicator == i, SubBasinOrSubZone == j)
+
+    rainfall_targeted <- sb_rain |> 
+      filter(SubBasinOrSubZone == j, LayerDate >= min(freshwater_targeted$Date))
     
     if (all(is.na(freshwater_targeted$Values))){#if all values are NA, skip the loop
       
     } else { #create the plot
     
       #work out the coefficent between each dataset
-      coeff <- max(rainfall_targeted$Rainfall, na.rm = T)/max(freshwater_targeted$Values, na.rm = T)
+      coeff <- max(rainfall_targeted$MonthlyMeanRainfall, na.rm = T)/max(freshwater_targeted$Values, na.rm = T)
       
       #Define the palette without "Blue"
       original_palette <- rev(RColorBrewer::brewer.pal(9, "YlOrRd"))
@@ -708,7 +716,7 @@ for (i in unique(freshwater_wq_all$Indicator)){#for each indicator
       
       #plot data
       temp_plot <- ggplot() +
-        geom_line(data = rainfall_targeted, aes(x = Date, y = Rainfall/coeff, color = "Rainfall")) +
+        geom_line(data = rainfall_targeted, aes(x = LayerDate, y = MonthlyMeanRainfall/coeff, color = "Rainfall")) +
         geom_line(data = freshwater_targeted, aes(x = Date, y = Values, color = Code)) +
         theme_bw() +
         theme(panel.spacing = unit(0.1, "lines"),
@@ -799,16 +807,16 @@ if (exists("freshwater_wq_removed")) {# a removed and non-removed set exists, sa
   
   #save the data with the removed sites
   write_csv(freshwater_wq_all, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_freshwater_wq_all_sites_removed.csv"))
+            glue("{data_path}/{script_fyear-1}-{script_fyear}_freshwater_wq_all_sites_removed.csv"))
   
   #save the original without the removed sites - this is useful for inspecting at a later date
   write_csv(freshwater_wq_pre_removal, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_freshwater_wq_all_pre_removal.csv"))
+            glue("{data_path}/{script_fyear-1}-{script_fyear}_freshwater_wq_all_pre_removal.csv"))
 
 } else {#otherwise just save the one
   
   write_csv(freshwater_wq_all, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_freshwater_wq_all.csv"))
+            glue("{data_path}/{script_fyear-1}-{script_fyear}_freshwater_wq_all.csv"))
 
 }
 

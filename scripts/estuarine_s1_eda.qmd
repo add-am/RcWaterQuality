@@ -51,10 +51,6 @@ library(RcTools)
 #load in the custom function used to create the read and write folders for the script
 source("functions/setup_helper.R")
 
-#define the script crs and target year
-script_crs <- "EPSG:7855"
-script_fyear <- 2024
-
 #get the required paths
 paths <- setup_helper(script_fyear)
 data_path <- paths[[1]]

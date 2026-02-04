@@ -5,10 +5,24 @@ description: "Script 3 in a series of script designed to analyse, score, and pre
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2024
+  script_crs: "EPSG:7844"
+  script_fyear: 2024
   sites_removed: TRUE  
 ---
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+sites_removed <- params$sites_removed
+
+```
 
 # Introduction
 
@@ -26,20 +40,20 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #use pacman function to load and install (if required) all other packages
 pacman::p_load(tidyverse, glue, here, janitor, ggplot2)
 
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
+
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
-
-##read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
 #turn off scientific notation
 options(scipen = 999)
-
-#determine if we want the dataset to be the one with removed sites, or the original
-removed <- params$sites_removed
 
 ```
 
@@ -51,7 +65,7 @@ Data for this script is provided in a single spreadsheet that was prepared by sc
 #| label: load data
 #| warning: true
 
-if (file.exists(glue("{data_path}_sites_removed.csv")) & removed == T){ #if post removed exists, and that is what you want
+if (file.exists(glue("{data_path}_sites_removed.csv")) & sites_removed == TRUE){ #if post removed exists, and that is what you want
   
   #read in data
   freshwater_wq_all <- read_csv(glue("{data_path}_sites_removed.csv"))
@@ -89,7 +103,7 @@ freshwater_wq_all <- freshwater_wq_all |>
                                    "Paluma Lake"))
 
 #cut off data that is past the targeted financial year - this is important to be able to replicate old graphs
-freshwater_wq_target <- freshwater_wq_all |> filter(Fy <= current_fyear)
+freshwater_wq_target <- freshwater_wq_all |> filter(Fy <= script_fyear)
 
 ```
 
@@ -108,7 +122,7 @@ base_breaks <- function(n = 10){
 }
 
 #boxplot data only requires the current year to work
-boxplot_data <- freshwater_wq_target |> filter(Fy == current_fyear)
+boxplot_data <- freshwater_wq_target |> filter(Fy == script_fyear)
 
 theme_set(theme_bw(8))
 
@@ -199,5 +213,10 @@ for (i in unique(freshwater_wq_target$Indicator)){#for each indicator
   ggsave(filename = glue("{output_path}/lineplot_{i}.png"), plot = line_plot, width = 16, height = 20, units = "cm")
     
 }
+
+```
+
+```{r}
+
 
 ```
