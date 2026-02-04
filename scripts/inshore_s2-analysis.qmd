@@ -5,8 +5,8 @@ description: "Script 2 in a series of script designed to analyse, score, and pre
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2024
+  script_crs: "EPSG:7844"
+  script_fyear: 2024
   sites_removed: TRUE
 ---
 
@@ -14,6 +14,20 @@ params:
 ## Note
 Params with the yaml of this script allow a choice between datasets that have "offending" sites removed, and datasets that contain all data. Choose appropriately depending on your needs!
 :::
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+sites_removed <- params$sites_removed
+
+```
 
 # Introduction
 
@@ -44,20 +58,20 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #use pacman function to load and install (if required) all other packages
 pacman::p_load(tidyverse, glue, here, janitor, openxlsx2, reactable)
 
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
+
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
-
-#read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
 #turn off scientific notation
 options(scipen = 999)
-
-#determine if we want the dataset to be the one with removed sites, or the original
-removed <- params$sites_removed
 
 ```
 
@@ -69,7 +83,7 @@ Data for this script is provided in a single spreadsheet that was prepared by sc
 #| label: load data
 #| warning: true
 
-if (file.exists(glue("{data_path}_sites_removed.csv")) & removed == T){ #if post removed exists, and that is what you want
+if (file.exists(glue("{data_path}_sites_removed.csv")) & sites_removed == TRUE){ #if post removed exists, and that is what you want
   
   #read in data
   inshore_wq_all <- read_csv(glue("{data_path}_sites_removed.csv"))
@@ -115,8 +129,8 @@ Once all the data has been loaded in we can begin to calculate results. However 
 #| label: calculate side statistics
 
 #select current fy and add the month column
-inshore_wq_cy <- inshore_wq_all |> filter(Fy == current_fyear) |> 
-  mutate(Month = month(Date, label = T))
+inshore_wq_cy <- inshore_wq_all |> filter(Fy == script_fyear) |> 
+  mutate(Month = month(Date, label = TRUE))
 
 #calculate the number of months sampled, and the total number of samples
 inshore_wq_cy <- inshore_wq_cy |> 
@@ -135,12 +149,12 @@ First we will calculate the annual mean/median values directly from the sample d
 #| label: Calculate annual medians
 
 #group up using the same reverse grouping trick and calculate values
-is_wq_annual <- inshore_wq_cy |> 
-  #group_by(across(c(-Monthly_Mean_Values, -Monthly_Median_Values, -Month))) |> 
-  group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Fy, NMonths, NSamples, Indicator,
-           Units, Wqo, Stat) |>
-  mutate(AnnualMeanValues = mean(Values, na.rm = T),
-         AnnualMedianValues = median(Values, na.rm = T)) |> 
+is_wq_annual <- inshore_wq_cy |>  
+  group_by(
+    Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, 
+    Fy, NMonths, NSamples, Indicator, Units, Wqo, Stat) |>
+  mutate(AnnualMeanValues = mean(Values, na.rm = TRUE),
+         AnnualMedianValues = median(Values, na.rm = TRUE)) |> 
   ungroup()
 
 ```
@@ -154,8 +168,9 @@ As you may have noticed we are calculating both means and medians currently. Thi
 
 #select correct stat and merge
 is_wq_annual <- is_wq_annual |> 
-  mutate(AnnualStatValues = case_when(Stat == "mean" ~ AnnualMeanValues,
-                                        T ~ AnnualMedianValues))
+  mutate(AnnualStatValues = case_when(
+    Stat == "mean" ~ AnnualMeanValues,
+    TRUE ~ AnnualMedianValues))
 
 ```
 
@@ -174,12 +189,15 @@ inshore_summary_stats <- is_wq_annual |>
          Indicator = fct_relevel(Indicator, "Nox", "Pn", "Pp", "Tp", "TN", "FRP", "Turbidity", "Tss", "Secchi", "Chla"), 
          AnnualStatValues = round(AnnualStatValues, 4)) |> 
   arrange(Indicator, WatercourseOrGeographicArea)
-  
-#load in custom function
-source(here("functions/cond_form_wq_summary_stats.R"))
 
-#save data
-cond_form_wq_summary_stats(inshore_summary_stats, glue("{output_path}/summary_statistics"), cols = c(5:6))
+#save the data
+save_n3_table(
+  inshore_summary_stats,
+  glue("{output_path}/summary_statistics"),
+  target_columns = c(5:6),
+  target_rows = 1:nrow(inshore_summary_stats),
+  scheme = "Summary Statistic"
+)
 
 #Important note: Variables for which "success" is to be greater than the water quality objective need to have their colours reversed.
 
@@ -195,29 +213,20 @@ To standardise scores we will use a capping method, to limit scores to be betwee
 ```{r}
 #| label: cap scores
 
-#create a capped score function
-capped_score <- function(Indicator, Value, Wqo){
+is_wq_annual_scored <- value_to_score(
+  is_wq_annual,
+  AnnualStatValues,
+  "Water Quality",
+  "Marine",
+  Indicator,
+  Wqo
+)
 
-  if (Indicator != "Secchi"){ #if the indicator is not Secchi use the normal scoring system (high = fail)
-    
-    score <- ifelse(log2(Wqo/Value) <= -1, -1, #if Wqo/Value is less than -1, cap at -1
-                    ifelse(log2(Wqo/Value) >= 1, 1, log2(Wqo/Value))) #if Wqo/Value is greater than 1, cap at 1, else keep calculated value.
-
-  } else { #else for the Secchi indicator reverse the scoring system
-    
-    score <- ifelse(log2(Value/Wqo) <= -1, -1, #if Wqo/Value is less than -1, cap at -1
-                    ifelse(log2(Value/Wqo) >= 1, 1, log2(Value/Wqo))) #if Wqo/Value is greater than 1, cap at 1, else keep calculated value.
-    
-  }
-}
-
-#run function using a rowwise grouping (each "group" is a single row) then select required columns and rows
-is_wq_annual <- is_wq_annual |> 
-  rowwise() |> 
-  mutate(Score = capped_score(Indicator, AnnualStatValues, Wqo)) |> 
-  ungroup() |> 
-  select(Region, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Indicator, Score) |> 
-  distinct() |> filter(!is.na(Score))
+#refine dataset to just columns and rows we want
+is_wq_annual_scored <- is_wq_annual_scored |> 
+  select(Region, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Indicator, AnnualStatValuesScore) |> 
+  distinct() |> 
+  filter(!is.na(AnnualStatValuesScore))
 
 ```
 
@@ -231,33 +240,11 @@ To calculate indicator category and index scores we first need to prepared the d
 #| label: prepare data
 
 #pivot data wider and convert columns to factors to set up for the impending calculation
-is_wq_annual_wide <- is_wq_annual |> 
-  pivot_wider(names_from = Indicator, values_from = Score)
+is_wq_annual_wide <- is_wq_annual_scored |> 
+  pivot_wider(names_from = Indicator, values_from = AnnualStatValuesScore)
 
-```
-
-## Standarisation
-
-All of the capped scores (between -1 and +1) that have been calculated can now be standardised into the traditional report card scoring range of 0-100. Below we create a function that completes this.
-
-```{r}
-#| label: standardise scores
-
-#create a standardizing function
-standardise_scores <- function(col){
-  col = case_when(col >= 0.51 ~ 100 - (19 - ((col - 0.51) * (19/0.49))),
-                  col >= 0 & col < .51 ~ 80.9 - (19.9 - (col * (19.9/0.50))),
-                  col >= -0.33 & col < -0.01 ~ 60.9 - (19.9 - ((col + 0.33) * (19.9/0.32))),
-                  col >= -0.66 & col < -0.34 ~ 40.9 - (19.9 - ((col + 0.66) * (19.9/0.32))),
-                  TRUE ~ 20.9 - (20.9 - ((col + 1) * (20.9/0.34))))
-}
-
-#apply the standardise_scores function across selected columns
-is_wq_stand_scores <- is_wq_annual_wide |> 
-  mutate(across(5:14, ~standardise_scores(.)))
-
-#run the name cleaning function
-is_wq_stand_scores <- name_cleaning(is_wq_stand_scores)
+#clean the names up
+is_wq_annual_wide <- name_cleaning(is_wq_annual_wide)
 
 ```
 
@@ -267,10 +254,10 @@ Before we can then perform the require rowwise operations.
 #| label: calculate indicator category and index scores
 
 #calculate indicator categories and indices scores
-is_wq_all <- is_wq_stand_scores |> 
+is_wq_all <- is_wq_annual_wide |> 
   rowwise() |> 
-  mutate(Nutrients = mean(c(Nox, Pn, Pp, Tp), na.rm = T),
-         PhysChem = mean(c(Turbidity, Tss, Secchi), na.rm = T),
+  mutate(Nutrients = mean(c(Nox, Pn, Pp, Tp), na.rm = TRUE),
+         PhysChem = mean(c(Turbidity, Tss, Secchi), na.rm = TRUE),
          across(where(is.numeric), ~ifelse(is.infinite(.), NA, .))) |>
   ungroup()
 
@@ -286,13 +273,19 @@ Once all scores have been calculated at the geographic area level, they can be a
 #group at each level and get the mean of each indicator, indicator category, and index, at that level
 sub_zone_scores <- is_wq_all |> 
   group_by(Region, BasinOrZone, SubBasinOrSubZone) |> 
-  summarise(across(2:(length(is_wq_all)-3), mean, na.rm = T)) |> 
+  summarise(across(
+    c(Chla, Nox, Pn, Pp, Secchi, Tss, Turbidity, Tn, Tp, Frp, Nutrients, PhysChem), 
+    \(x) mean(x, na.rm = TRUE)
+  )) |> 
   ungroup()
 
 #as above
 zone_scores <- is_wq_all |> select(-WatercourseOrGeographicArea) |>  
   group_by(Region, BasinOrZone) |> 
-  summarise(across(2:(length(is_wq_all)-3), mean, na.rm = T)) |> 
+  summarise(across(
+    c(Chla, Nox, Pn, Pp, Secchi, Tss, Turbidity, Tn, Tp, Frp, Nutrients, PhysChem),
+    \(x) mean(x, na.rm = TRUE)
+  )) |> 
   ungroup()
 
 #combine each of the datasets
@@ -315,11 +308,13 @@ sub_zone_scores_save <- sub_zone_scores |> ungroup() |>
   ungroup() |> 
   mutate(across(where(is.numeric), floor))
 
-#load in custom function
-source(here("functions/cond_form_rc_grades.R"))
-
-#save data
-cond_form_rc_grades(sub_zone_scores_save, glue("{output_path}/is_appendix_sub_zone_scores"), cols = c(2:5), method = "numeric")
+save_n3_table(
+  sub_zone_scores_save,
+  glue("{output_path}/inshore_appendix_sub_basin_scores"),
+  c(2:5),
+  1:nrow(sub_zone_scores_save),
+  scheme = "Report Card"
+)
 
 ```
 
@@ -327,14 +322,15 @@ cond_form_rc_grades(sub_zone_scores_save, glue("{output_path}/is_appendix_sub_zo
 
 Next we can calculate the index scores by taking the mean of the indicator category scores. 
 
-Note that I'm not sure why the order of the calculations goes this way, it just does.
+Note that I'm not sure why the order of the calculations goes this way, it just does. The impact is we have to run the:
+OverallWq = mean(c(Nutrients, PhysChem, Chla), na.rm = TRUE) section a few times through the script.
 
 ```{r}
 #| label: index scores
 
 is_wq_stand_scores <- is_wq_all_scores |> 
   rowwise() |> 
-  mutate(OverallWq = mean(c(Nutrients, PhysChem, Chla), na.rm = T))
+  mutate(OverallWq = mean(c(Nutrients, PhysChem, Chla), na.rm = TRUE))
 
 ```
 
@@ -345,18 +341,7 @@ Finally, scores can be converted to a grade.
 ```{r}
 #| label: convert score to grade
 
-#create score to grade function
-score_to_grade <- function(Score) {
-  
-  Grade <- ifelse(Score >= 81, "A",
-                  ifelse(Score >= 61, "B",
-                         ifelse(Score >= 41, "C",
-                                ifelse(Score >= 21, "D", "E"))))
-}
-
-#apply score to grade function to each column
-is_wq_all_scores_grades_raw <- is_wq_stand_scores |> 
-  mutate(across(5:length(is_wq_stand_scores), .names = "{.col}_Grade", ~ score_to_grade(.)))
+is_wq_all_scores_grades_raw <- score_to_grade(is_wq_stand_scores, 5:length(is_wq_stand_scores))
 
 ```
 
@@ -400,26 +385,43 @@ nutrients_table <- is_wq_all_scores_grades_floor |>
   select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Nox, Pn, Pp, Tp, Tn, Frp, Nutrients) |> 
   arrange(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea)
 
-#load in custom function
-source(here("functions/cond_form_rc_grades.R"))
-
-#save data
-cond_form_rc_grades(nutrients_table, glue("{output_path}/is_nutrients"), cols = c(4:10), method = "Numeric")
-
 #select columns for the phys_chem table
-phys_chem_table <- is_wq_all_scores_grades_floor |> 
+physchem_table <- is_wq_all_scores_grades_floor |> 
   select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Turbidity, Tss, Secchi, PhysChem) |> 
   arrange(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea)
-
-#save data
-cond_form_rc_grades(phys_chem_table, glue("{output_path}/is_phys_chem"), cols = c(4:7), method = "Numeric")
 
 #select columns for the chlorophyll table
 chla_table <- is_wq_all_scores_grades_floor |> 
   select(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Chla) |> 
   arrange(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea)
 
-#save data
-cond_form_rc_grades(chla_table, glue("{output_path}/is_chlorophyll"), cols = c(4), method = "Numeric")
+save_n3_table(
+  nutrients_table,
+  glue("{output_path}/inshore_nutrients"),
+  c(4:10),
+  1:nrow(nutrients_table),
+  scheme = "Report Card"
+)
+
+save_n3_table(
+  physchem_table,
+  glue("{output_path}/inshore_physchem"),
+  c(4:7),
+  1:nrow(physchem_table),
+  scheme = "Report Card"
+)
+
+save_n3_table(
+  chla_table,
+  glue("{output_path}/inshore_chlorophyll"),
+  c(4),
+  1:nrow(chla_table),
+  scheme = "Report Card"
+)
+
+```
+
+```{r}
+
 
 ```

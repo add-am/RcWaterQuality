@@ -5,9 +5,22 @@ description: "Script 1 in a series of script designed to analyse, score, and pre
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2024 
+  script_crs: "EPSG:7844"
+  script_fyear: 2024 
 ---
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+
+```
 
 # Introduction
 
@@ -28,17 +41,17 @@ This script requires multiple core spatial packages, each of which is loaded bel
 ```{r}
 #| label: load packages
 
-#use pacman function to load and install (if required) all other packages
-pacman::p_load(tidyverse, glue, here, sf, tmap, janitor, readxl, ggplot2, busdater)
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
 
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
-
-##read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
 #turn off scientific notation
 options(scipen = 999)
@@ -157,7 +170,7 @@ for (i in 2:length(sheets)){
                   Date = Date + seconds(1), #add one second to avoid date-time error
                   Date = ymd_hms(Date), Fy = get_fy(Date), .after = Date) |> 
            filter(Fy > 2012,
-                  Fy <= current_fyear)) #to allow for specific reporting year targeting
+                  Fy <= script_fyear)) #to allow for specific reporting year targeting
 }
 
 #clean up
@@ -201,7 +214,7 @@ inshore_wq_all <- inshore_wq |>
   separate_wider_regex("Indicator", c("Indicator" = ".*", "_", "Units" = ".*")) |> #split names into indicator and units
   mutate(Date = ymd(substr(Date, 1, 10))) |> #drop time so we can get daily means
   group_by(Code, Date, Fy, Indicator, Units) |> 
-  summarise(Values = mean(Values, na.rm = T)) |> ungroup() |>  #get daily mean
+  summarise(Values = mean(Values, na.rm = TRUE)) |> ungroup() |>  #get daily mean
   left_join(site_metadata) |> 
   filter(!is.na(Values))
 
@@ -266,12 +279,12 @@ We will check the number of locations found in the dataset matches what we expec
 
 #group by the different levels of location
 location_check <- inshore_wq_all |> 
-  filter(Fy == current_fyear) |> #make sure we are only checking the current year of data
+  filter(Fy == script_fyear) |> #make sure we are only checking the current year of data
   group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea) |> 
   summarize(.groups = "drop")
 
 #get the number of locations that are expected
-num_locs <- ifelse(current_fyear <= 2020, 7, 8)
+num_locs <- ifelse(script_fyear <= 2020, 7, 8)
 
 #then check if we have the right number of locations
 if (nrow(location_check) == num_locs & !any(is.na(location_check))){
@@ -292,12 +305,12 @@ stop("Test fail, currently the DT report should have 8 unique geographic areas, 
 
 #group by geographic areas and code
 code_check <- inshore_wq_all |> 
-  filter(Fy == current_fyear) |> #make sure we are only checking the current year of data
+  filter(Fy == script_fyear) |> #make sure we are only checking the current year of data
   group_by(WatercourseOrGeographicArea, Code) |> 
   summarize(.groups = "drop")
 
 #get the number of codes that are expected
-num_codes <- ifelse(current_fyear <= 2020, 18, 20)
+num_codes <- ifelse(script_fyear <= 2020, 18, 20)
 
 #then check if we have the right number of geographic areass and codes
 if (nrow(code_check) == num_codes & !any(is.na(code_check))){
@@ -328,7 +341,7 @@ We will now compare the LOR values against the concentration values recorded in 
 
 #check how many values are half of the LOR compared to the total number of values for the reporting period
 value_lor_check <- inshore_wq_all |> 
-  filter(Fy == current_fyear) |> 
+  filter(Fy == script_fyear) |> 
   mutate(`ValueHalved?` = case_when(Values <= Lor ~ "ValueHalved", 
                                      T ~ "ValueUnchanged")) |> 
   group_by(Code, Indicator, `ValueHalved?`) |> 
@@ -377,7 +390,7 @@ For any site that is flagged, the offending indicator will be removed.
 
 #check if the LOR is equal to or greater than the WQO, whilst also checking if any values are also in this range
 wqo_lor_check_p1 <- inshore_wq_all |> 
-  filter(Fy == current_fyear, Indicator != Lor) |> #this gets current year and ignore FRP
+  filter(Fy == script_fyear, Indicator != Lor) |> #this gets current year and ignore FRP
   mutate(Comparison = case_when(Lor >= Wqo & Values > Lor ~ "Val_Warn",
                                 Lor >= Wqo & Values <= Lor ~ "Val_Fail",
                                 T ~ "Val_Pass")) |>
@@ -416,7 +429,7 @@ if (any("Val_Fail" %in% colnames(wqo_lor_check_p1))){
       select(Code, Indicator)
   
     #use the full dataset to add all information about the code-indicator pair of any failed sites
-    removal_table <- semi_join(filter(inshore_wq_all, Fy == current_fyear), removal_table, by = join_by(Code, Indicator))
+    removal_table <- semi_join(filter(inshore_wq_all, Fy == script_fyear), removal_table, by = join_by(Code, Indicator))
   
     #subtract from the main table, any rows that appear in the removal table
     inshore_wq_removed <- suppressMessages(anti_join(inshore_wq_all, removal_table))
@@ -467,7 +480,7 @@ After some mostly automated QA/QC we will now conduct some exploratory data anal
 ```{r}
 #| label: select this years data
 
-inshore_wq_cy <- inshore_wq_all |> filter(Fy == current_fyear)
+inshore_wq_cy <- inshore_wq_all |> filter(Fy == script_fyear)
 
 ```
 
@@ -645,18 +658,22 @@ if (exists("inshore_wq_removed")) {# a removed and non-removed set exists, save 
   
   #save the data with the removed sites
   write_csv(inshore_wq_all, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_inshore_wq_all_sites_removed.csv"))
+            glue("{data_path}/{script_fyear-1}-{script_fyear}_inshore_wq_all_sites_removed.csv"))
   
   #save the original without the removed sites - this is useful for inspecting at a later date
   write_csv(inshore_wq_pre_removal, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_inshore_wq_all_pre_removal.csv"))
+            glue("{data_path}/{script_fyear-1}-{script_fyear}_inshore_wq_all_pre_removal.csv"))
 
 } else {#otherwise just save the one
   
   write_csv(inshore_wq_all, 
-            glue("{data_path}/{current_fyear-1}-{current_fyear}_inshore_wq_all.csv"))
+            glue("{data_path}/{script_fyear-1}-{script_fyear}_inshore_wq_all.csv"))
 
 }
+
+```
+
+```{r}
 
 ```
 

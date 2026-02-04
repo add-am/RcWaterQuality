@@ -1,0 +1,187 @@
+---
+title: "Freshwater Water Quality Exploratory Data Analysis"
+subtitle: "A Healthy Waters Partnership Analysis"
+description: "Script 5 in a series of script designed to analyse, score, and present freshwater water quality in the Dry Tropics region. The output of this is used in the Dry Tropics Technical Report."
+author: "Adam Shand"
+format: html
+params:
+  script_crs: "EPSG:7844"
+  script_fyear: 2023 
+  sites_removed: FALSE
+---
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+sites_removed <- params$sites_removed
+
+```
+
+# Introduction
+
+The purpose of this script is to perform special data analysis in response to finding that "fall out" of the technical report analysis. This script will become a bit of a hodge-podge of random graphs and calculations as needed by each technical report.
+
+::: {.callout-note}
+## Note
+This script will produce a variety of responses dependent on the target_fyear (see yaml). For each Fy of special analysis, initiate the code chunk inside an if-else statement such that the code will only run if the correct FY data is loaded.
+:::
+
+# Script Set Up
+
+This script requires multiple core spatial packages, each of which is loaded below. Key variables and paths are also created.
+
+```{r}
+#| label: load packages
+
+#use pacman function to load and install (if required) all other packages
+pacman::p_load(tidyverse, glue, here, janitor, openxlsx2, reactable, ggplot2)
+
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
+
+#load in the custom function used to create the read and write folders for the script
+source("functions/setup_helper.R")
+
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
+
+#turn off scientific notation
+options(scipen = 999)
+
+```
+
+# Load Data
+
+Data for this script is provided in a single spreadsheet that was prepared by script 1 in this series of scripts. Please note that script 1 may have removed some offending values, if this is the case a warning will notify as such.
+
+```{r}
+#| label: load data
+#| warning: true
+
+if (file.exists(glue("{data_path}_sites_removed.csv")) & sites_removed == TRUE){ #if post removed exists, and that is what you want
+  
+  #read in data
+  freshwater_wq_all <- read_csv(glue("{data_path}_sites_removed.csv")) |> 
+    name_cleaning()
+  
+  #provide a notifying warning
+  warning("The data that has been loaded in has had some values removed as per the QA/QC checks 
+          performed in script 1 of this series. Please confirm this is the dataset you would like
+          to use.")
+  
+} else if (file.exists(glue("data_path}.csv"))){ #if a dataset that never needed removal exists
+  
+  #read in data
+  freshwater_wq_all <- read_csv(glue("{data_path}.csv")) |> 
+    name_cleaning()
+
+} else { #otherwise, take the pre removal dataset
+  
+  #read in data
+  freshwater_wq_all <- read_csv(glue("{data_path}_pre_removal.csv")) |> 
+    name_cleaning()
+    
+}
+
+#convert columns to factors and give them the custom order we use in the technical report
+freshwater_wq_all <- freshwater_wq_all |> 
+  mutate(across(c(BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea), factor),
+         BasinOrZone = fct_relevel(BasinOrZone, "Ross", "Black"), 
+         SubBasinOrSubZone = fct_relevel(SubBasinOrSubZone, "Upper Ross River", "Lower Ross River", "Bohle River", "Black River", 
+                                         "Bluewater Creek", "Rollingstone Creek", "Crystal Creek"), 
+         WatercourseOrGeographicArea = fct_relevel(WatercourseOrGeographicArea, "Ross Lake", "Aplins Weir", "Gleesons Weir",
+                                   "Blacks Weir", "Bohle Mid-Field", "Bohle Far-Field", "Black River", 
+                                   "Althaus Creek", "Bluewater Creek","Sleeper Log Creek", "Leichhardt Creek",
+                                   "Saltwater Creek",  "Rollingstone Creek", "Ollera Creek", "Crystal Creek",
+                                   "Paluma Lake"))
+
+```
+
+# Special Analysis
+
+## FY: 2023
+
+The following code is only applicable to the 2023 financial year.
+
+The first question is around why Ross Lake DIN decreased. We will look specifically at this variable over the past 3 years below.
+
+```{r}
+#| label: Ross Lake DIN
+
+if (script_fyear == 2023){
+
+  #filter data
+  ross_lake_din <- freshwater_wq_all |> 
+    filter(Indicator == "DIN", WatercourseOrGeographicArea == "Ross Lake", F > 2018)
+  
+  #create a basic line plot
+  ross_line_plot <- ggplot(ross_lake_din) +
+    geom_line(mapping = aes(x = Date, y = Values, colour = Code)) +
+    geom_line(mapping = aes(x = Date, y = Wqo), color = "black") +
+    geom_hline(mapping = aes(yintercept = Wqo, linetype = glue("{Wqo}")), colour = "black") +
+    scale_linetype_manual(name = "DIN WQO and LOR", values = 1) +
+    ylab("DIN (mg/L)")
+  
+}
+
+#save graph
+ggsave(glue("{output_path}/ross_lake_DIN.png"), width = 4.5, height = 5)
+
+
+```
+
+The second question is what has the historical concentrations of DIN and TP been in the Bohle River sub basin.
+
+```{r}
+#| label: Bohle DIN and TP
+
+#filter data for what we want
+bohle_din <- freshwater_wq_all |> 
+  filter(Indicator == "DIN", SubBasinOrSubZone == "Bohle River", F > 2018)
+
+#pull out Wqo
+wqo <- unique(bohle_din$Wqo)
+
+#map data and put the WQO over the top
+bohle_line_plot <- ggplot(bohle_din) +
+  geom_line(mapping = aes(x = Date, y = Values, colour = WatercourseOrGeographicArea)) +
+  geom_hline(mapping = aes(yintercept = Wqo, linetype = glue("{wqo}")), colour = "black") +
+  scale_linetype_manual(name = "DIN WQO", values = 1) +
+  ylab("DIN (mg/L)")
+
+#save graph
+ggsave(glue("{output_path}/bohle_DIN.png"), width = 4.5, height = 5)
+
+#filter data for what we want
+bohle_tp <- freshwater_wq_all |> 
+  filter(Indicator == "TP", SubBasinOrSubZone == "Bohle River", Fy > 2018)
+
+#pull out WQO
+wqo <- unique(bohle_tp$Wqo)
+
+#map data and put the WQO over the top
+bohle_line_plot <- ggplot(bohle_tp) +
+  geom_line(mapping = aes(x = Date, y = Values, colour = WatercourseOrGeographicArea)) +
+  geom_hline(mapping = aes(yintercept = Wqo, linetype = glue("{wqo}")), colour = "black") +
+  scale_linetype_manual(name = "TP WQO", values = 1) +
+  ylab("TP (mg/L)")
+
+#save graph
+ggsave(glue("{output_path}/bohle_TP.png"), width = 4.5, height = 5)
+
+```
+
+```{r}
+
+```
+

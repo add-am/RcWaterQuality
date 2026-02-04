@@ -6,7 +6,7 @@ author: "Adam Shand"
 format: html
 params:
   script_crs: "EPSG:7844"
-  script_fyear: 2024 
+  script_fyear: 2024
 ---
 
 ```{r}

@@ -1,0 +1,17 @@
+Region,BasinOrZone,SubBasinOrSubZone,WatercourseOrGeographicArea,Chla,Nox,Pn,Pp,Secchi,Tss,Turbidity,Tn,Tp,Frp,Nutrients,PhysChem,OverallWq,ChlaGrade,NoxGrade,PnGrade,PpGrade,SecchiGrade,TssGrade,TurbidityGrade,TnGrade,TpGrade,FrpGrade,NutrientsGrade,PhysChemGrade,OverallWqGrade
+DT,Halifax Bay,Midshelf,Midshelf,36,85,35,79,36,100,98,NA,NA,NA,66,78,60,D,A,D,B,D,A,A,E,E,E,B,B,C
+DT,Halifax Bay,HB.Open Coastal,H.Open Coastal,41,100,28,56,2,69,75,NA,NA,NA,61,49,50,C,A,D,C,E,B,B,E,E,E,B,C,C
+DT,Cleveland Bay,Magnetic Island,Magnetic Island,80,57,15,41,73,98,67,NA,NA,NA,38,79,66,B,C,E,C,B,A,B,E,E,E,D,B,B
+DT,Cleveland Bay,CB.Enclosed Coastal,EC.Outside Port Zone,63,100,NA,NA,100,3,0,79,100,100,100,34,66,B,A,E,E,A,E,E,B,A,A,A,D,B
+DT,Cleveland Bay,CB.Open Coastal,OC.Outside Port Zone,NA,NA,NA,NA,54,95,0,88,100,100,100,50,75,E,E,E,E,C,A,E,A,A,A,A,C,B
+DT,Cleveland Bay,CB.Open Coastal,OC.Inside Port Zone,NA,100,NA,NA,99,100,84,100,100,100,100,94,97,E,A,E,E,A,A,A,A,A,A,A,A,A
+DT,Halifax Bay,HB.Enclosed Coastal,H.Enclosed Coastal,100,100,NA,NA,NA,66,46,100,100,100,100,56,85,A,A,E,E,E,B,C,A,A,A,A,C,A
+DT,Cleveland Bay,CB.Enclosed Coastal,EC.Inside Port Zone,NA,100,NA,NA,100,100,63,99,100,100,100,87,93,E,A,E,E,A,A,B,A,A,A,A,A,A
+DT,Cleveland Bay,CB.Enclosed Coastal,NA,63,100,NA,NA,100,51,31,89,100,100,100,61,75,B,A,E,E,A,C,D,A,A,A,A,B,B
+DT,Cleveland Bay,CB.Open Coastal,NA,NA,100,NA,NA,77,97,42,94,100,100,100,72,86,E,A,E,E,B,A,C,A,A,A,A,B,A
+DT,Cleveland Bay,Magnetic Island,NA,80,57,15,41,73,98,67,NA,NA,NA,38,79,66,B,C,E,C,B,A,B,E,E,E,D,B,B
+DT,Halifax Bay,HB.Enclosed Coastal,NA,100,100,NA,NA,NA,66,46,100,100,100,100,56,85,A,A,E,E,E,B,C,A,A,A,A,C,A
+DT,Halifax Bay,HB.Open Coastal,NA,41,100,28,56,2,69,75,NA,NA,NA,61,49,50,C,A,D,C,E,B,B,E,E,E,B,C,C
+DT,Halifax Bay,Midshelf,NA,36,85,35,79,36,100,98,NA,NA,NA,66,78,60,D,A,D,B,D,A,A,E,E,E,B,B,C
+DT,Cleveland Bay,NA,NA,72,89,15,41,85,79,43,91,100,100,87,69,76,B,A,E,C,A,B,C,A,A,A,A,B,B
+DT,Halifax Bay,NA,NA,59,95,32,67,19,78,73,100,100,100,76,61,65,C,A,D,B,E,B,B,A,A,A,B,B,B

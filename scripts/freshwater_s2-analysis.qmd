@@ -249,8 +249,8 @@ To calculate indicator category and index scores we first need to prepared the d
 #| label: prepare data
 
 #pivot data wider and convert columns to factors to set up for the impending calculation
-fw_wq_annual_wide <- fw_wq_annual |> 
-  pivot_wider(names_from = Indicator, values_from = AnnualMedianValues)
+fw_wq_annual_wide <- fw_wq_annual_scored |> 
+  pivot_wider(names_from = Indicator, values_from = AnnualMedianValuesScore)
 
 #clean the names up
 fw_wq_annual_wide <- name_cleaning(fw_wq_annual_wide)

@@ -152,8 +152,9 @@ Below we calculate monthly median values for each watercourse, this is particula
 
 #calculate monthly medians for each indicator
 est_wq_monthly <- estuarine_wq_cy |> 
-  group_by(Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, Fy, Month, NMonths, NSamples, Indicator, 
-           Units, Wqo, Sf, SubBasinArea, SubBasinProportionOfBasin) |> 
+  group_by(
+    Region, Environment, BasinOrZone, SubBasinOrSubZone, WatercourseOrGeographicArea, 
+    Fy, Month, NMonths, NSamples, Indicator, Units, Wqo, Sf, SubBasinArea, SubBasinProportionOfBasin) |> 
   summarise(MonthlyMedianValues = median(Values, na.rm = TRUE)) |> 
   ungroup()
 
