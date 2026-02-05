@@ -1,0 +1,13 @@
+Region,Environment,BasinOrZone,SubBasinOrSubZone,WatercourseOrGeographicArea,Code,Lat,Long,Date,ProportionInsecticides,ProportionOtherHerbicides,ProportionPsiiHerbicides,SpeciesProtected,MsPaf,Risk,NumberOfPesticidesIncluded,MsPafScore,MsPafGrade
+DT,Freshwater,Ross,Lower Ross River,Ross River,CLMP.RR,-19.31,146.77,2018-2019,0,0,0,99.9,0.1,Very Low,22,98.1,A
+DT,Freshwater,Ross,Lower Ross River,Ross River,CLMP.RR,-19.31,146.77,2019-2020,0,0.55,0.01,99.4,0.6,Very Low,22,88.6,A
+DT,Freshwater,Ross,Lower Ross River,Ross River,CLMP.RR,-19.31,146.77,2020-2021,0.07,0.28,0,99.7,0.3,Very Low,22,94.3,A
+DT,Freshwater,Ross,Lower Ross River,Ross River,CLMP.RR,-19.31,146.77,2021-2022,0,0.54,0,99.4,0.6,Very Low,22,88.6,A
+DT,Freshwater,Ross,Lower Ross River,Ross River,CLMP.RR,-19.31,146.77,2022-2023,0.39,0.61,0,99.1,0.9,Very Low,22,82.9,A
+DT,Freshwater,Ross,Lower Ross River,Ross River,CLMP.RR,-19.31,146.77,2023-2024,1.51,0.53,0,97.9,2.1,Low,22,75.46365914786968,B
+DT,Freshwater,Black,Black River,Black River,CLMP.BR,-19.24,146.63,2018-2019,0,0,0,100,0,Very Low,22,100,A
+DT,Freshwater,Black,Black River,Black River,CLMP.BR,-19.24,146.63,2019-2020,0.36,0.19,0,99.4,0.6,Very Low,22,88.6,A
+DT,Freshwater,Black,Black River,Black River,CLMP.BR,-19.24,146.63,2020-2021,0,0.4,0,99.6,0.4,Very Low,22,92.4,A
+DT,Freshwater,Black,Black River,Black River,CLMP.BR,-19.24,146.63,2021-2022,0,0.48,0,99.5,0.5,Very Low,22,90.5,A
+DT,Freshwater,Black,Black River,Black River,CLMP.BR,-19.24,146.63,2022-2023,0.45,0.44,0.11,99,1,Very Low,22,81,A
+DT,Freshwater,Black,Black River,Black River,CLMP.BR,-19.24,146.63,2023-2024,0.64,0.5,0,99.2,0.8,Very Low,22,84.8,A

@@ -5,9 +5,20 @@ description: "This script analyses the pesticide sampling locations in the Dry T
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2024 
+  script_fyear: 2024 
 ---
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_fyear <- params$script_fyear
+
+```
 
 # Introduction
 
@@ -25,17 +36,23 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #use pacman function to load and install (if required) all other packages
 pacman::p_load(tidyverse, glue, here, janitor, readxl)
 
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
+
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
-##read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
+#turn off scientific notation
+options(scipen = 999)
 
-#set project variables
-proj_crs <- params$project_crs
+#manually change data path for now
+data_path <- "data/pesticides/raw/"
 
 ```
 
@@ -47,14 +64,14 @@ Now the script is set up we need to load in all of the required datasets. For th
 #| label: load in all data
 
 #read in the target sheet and drop unwanted column names, then run the custom naming cleaning function
-site_metadata <- read_excel(glue("{data_path}/dt_wq_freshwater_pesticides_metadata.xlsx"),
+site_metadata <- read_excel(glue("{data_path}/pesticides_metadata.xlsx"),
                             sheet = "Current_Sites", na = c("", "NA", "NULL", "null")) |> 
   select(-c(SiteName, AKA)) |> 
   name_cleaning()
 
 
 #read in the target sheet and drop unwanted column names, then run the custom naming cleaning function
-site_data <- read_excel(glue("{data_path}/dt_wq_freshwater_pesticides_data_master.xlsx"), 
+site_data <- read_excel(glue("{data_path}/pesticides_data_master.xlsx"), 
                          sheet = "CLMP", na = c("", "NA", "NULL", "null")) |> 
   select(-SiteName) |> 
   name_cleaning()
@@ -84,26 +101,15 @@ Given the simplicity of the dataset we can now move straight to calculating the 
 ```{r}
 #| label: analyse data
 
-#create a standardizing function
-standardise_scores <- function(col){
-  col = case_when(col <= 1 ~ 81 + abs((19 - ((col - 0) * (19/1)))),
-                  col > 1 & col < 5 ~ 61 + abs((19.9 - ((col - 1.01) * (19.9/3.99)))),
-                  col >= 5 & col < 10 ~ 41 + abs((19.9 - ((col - 5) * (19.9/4.99)))),
-                  col >= 10 & col < 20 ~ 21 + abs((19.9 - ((col - 10) * (19.9/9.99)))),
-                  TRUE ~ 0 + abs((20.9 - ((col - 20) * (20.9/79.99)))))
-}
+#calculate scores
+pesticides_all <- value_to_score(
+  pesticides_all,
+  MsPaf,
+  "Pesticides"
+)
 
-#run the function
-pesticides_all <- pesticides_all |> 
-  mutate(Score = floor(standardise_scores(MsPaf)))
-
-#assign a grade
-pesticides_all <- pesticides_all |> 
-  mutate(Grade = case_when(Score >= 81 ~ "A",
-                           Score >= 61 ~ "B",
-                           Score >= 41 ~ "C",
-                           Score >= 21 ~ "D",
-                           T ~ "E"))
+#then grades
+pesticides_all <- score_to_grade(pesticides_all, MsPafScore)
 
 ```
 
@@ -119,14 +125,17 @@ write_csv(pesticides_all, glue("{output_path}/pesticides_full_results.csv"))
 
 #cut down dataset to only the proportions
 pesticides_report_ready <- pesticides_all |> 
-  filter(str_detect(Date, as.character(current_fyear))) |> 
-  select(BasinOrZone, Date, ProportionInsecticides, ProportionOtherHerbicides, ProportionPsiiHerbicides, SpeciesProtected, Score, Grade, Risk)
+  filter(str_detect(Date, as.character(script_fyear))) |> 
+  select(BasinOrZone, Date, ProportionInsecticides, ProportionOtherHerbicides, 
+  ProportionPsiiHerbicides, SpeciesProtected, MsPafScore, MsPafGrade, Risk)
 
-#load in custom function
-source(here("functions/cond_form_rc_grades.R"))
-
-#save data
-cond_form_rc_grades(pesticides_report_ready, glue("{output_path}/pesticide_scores"), cols = 7, method = "Numeric")
+save_n3_table(
+  pesticides_report_ready,
+  glue("{output_path}/pesticides_scores"),
+  7,
+  1:nrow(pesticides_report_ready),
+  "Report Card"
+)
 
 ```
 
@@ -141,8 +150,8 @@ An additional section we include in the technical report is a summary of any pes
 raw_concentration <- read_csv(glue("{data_path}/pesticide_concentrations.csv"))
 
 #create a datetime object out of our financial year variable
-fy_datetime_obj_min <- dmy_hm(glue("01-07-{current_fyear-1} 00:00"))
-fy_datetime_obj_max <- dmy_hm(glue("30-06-{current_fyear} 00:00"))
+fy_datetime_obj_min <- dmy_hm(glue("01-07-{script_fyear-1} 00:00"))
+fy_datetime_obj_max <- dmy_hm(glue("30-06-{script_fyear} 00:00"))
 
 #filter for just our year of interest
 raw_concentration <- raw_concentration |> 
@@ -160,6 +169,11 @@ unique_pesticides <- above_lor |>
 
 #save the dataset
 write_csv(unique_pesticides, glue("{output_path}/unique_pesticides.csv"))
+
+```
+
+```{r}
+
 
 ```
 

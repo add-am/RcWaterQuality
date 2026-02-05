@@ -5,9 +5,20 @@ description: "This script performs the simple preprocessings steps required for 
 author: "Adam Shand"
 format: html
 params:
-  project_crs: "EPSG:7844"
-  target_fyear: 2024 
+  script_fyear: 2024 
 ---
+
+```{r}
+
+#load in a custom function to get yaml parameters
+source("functions/get_quarto_params.R")
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_fyear <- params$script_fyear
+
+```
 
 # Introduction
 
@@ -23,17 +34,20 @@ This script requires multiple core spatial packages, each of which is loaded bel
 #use pacman function to load and install (if required) all other packages
 pacman::p_load(tidyverse, glue, here, janitor, readxl, busdater)
 
+#install/load the custom RcTools package
+#pak::pak("add-am/RcTools")
+library(RcTools)
+
 #load in the custom function used to create the read and write folders for the script
-source(here("functions/script_setup.R"))
+source("functions/setup_helper.R")
 
-#run the function to create the folders and paths
-script_setup()
+#get the required paths
+paths <- setup_helper(script_fyear)
+data_path <- paths[[1]]
+output_path <- paths[[2]]
 
-##read in the custom function to clean column names into our specific style
-source(here("functions/name_cleaning.R"))
-
-#set project variables
-proj_crs <- params$project_crs
+#turn off scientific notation
+options(scipen = 999)
 
 ```
 
@@ -102,6 +116,11 @@ write_csv(first_flush, glue("{output_path}/first_flush_for_prm.csv"))
 
 ```
 
+```{r}
+
+
+```
+
 All done.
 
-The saved dataset is now ready to be input into DETSI's online PRM tool.
+The saved datasets are now ready to be input into DETSI's online PRM tool.
