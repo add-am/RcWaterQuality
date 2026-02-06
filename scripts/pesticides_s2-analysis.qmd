@@ -8,18 +8,6 @@ params:
   script_fyear: 2024 
 ---
 
-```{r}
-
-#load in a custom function to get yaml parameters
-source("functions/get_quarto_params.R")
-
-params <- get_quarto_params()
-
-#return each param as its own object
-script_fyear <- params$script_fyear
-
-```
-
 # Introduction
 
 The purpose of this script is to analyse the pesticides data from the sampling site locations for the freshwater pesticides index and calculate standardised scores for the Dry Tropics Technical Report. This data is used in the body of the technical report as well as the appendix.
@@ -39,6 +27,11 @@ pacman::p_load(tidyverse, glue, here, janitor, readxl)
 #install/load the custom RcTools package
 #pak::pak("add-am/RcTools")
 library(RcTools)
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_fyear <- params$script_fyear
 
 #load in the custom function used to create the read and write folders for the script
 source("functions/setup_helper.R")

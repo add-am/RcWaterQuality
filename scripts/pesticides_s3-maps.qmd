@@ -9,19 +9,6 @@ params:
   script_fyear: 2024 
 ---
 
-```{r}
-
-#load in a custom function to get yaml parameters
-source("functions/get_quarto_params.R")
-
-params <- get_quarto_params()
-
-#return each param as its own object
-script_crs <- params$script_crs
-script_fyear <- params$script_fyear
-
-```
-
 # Introduction
 
 The purpose of this script is to create maps identifying the sampling site locations for the freshwater pesticides index. These maps are used in the body of the methods document, and in the appendix of the technical report.
@@ -39,6 +26,12 @@ pacman::p_load(tidyverse, glue, here, janitor, sf, tmap, readxl, grid)
 #install/load the custom RcTools package
 #pak::pak("add-am/RcTools")
 library(RcTools)
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
 
 #load in the custom function used to create the read and write folders for the script
 source("functions/setup_helper.R")

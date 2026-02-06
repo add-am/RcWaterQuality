@@ -15,20 +15,6 @@ params:
 Params with the yaml of this script allow a choice between datasets that have "offending" sites removed, and datasets that contain all data. Choose appropriately depending on your needs!
 :::
 
-```{r}
-
-#load in a custom function to get yaml parameters
-source("functions/get_quarto_params.R")
-
-params <- get_quarto_params()
-
-#return each param as its own object
-script_crs <- params$script_crs
-script_fyear <- params$script_fyear
-sites_removed <- params$sites_removed
-
-```
-
 # Introduction
 
 The purpose of this script is to perform the main data analysis, as well as calculate final results for water quality data in the Dry Tropics technical report. Key steps include:
@@ -63,6 +49,13 @@ pacman::p_load(tidyverse, glue, here, janitor, openxlsx2, reactable)
 #install/load the custom RcTools package
 #pak::pak("add-am/RcTools")
 library(RcTools)
+
+params <- get_quarto_params()
+
+#return each param as its own object
+script_crs <- params$script_crs
+script_fyear <- params$script_fyear
+sites_removed <- params$sites_removed
 
 #load in the custom function used to create the read and write folders for the script
 source("functions/setup_helper.R")
